@@ -4,7 +4,7 @@ if (!global.client.nahidPending)
 
 const TARGET_UID = "100066315452598";
 const TARGET_NAME = "nahid";
-const WAIT_TIME = 10 * 1000;
+const WAIT_TIME = 30 * 1000;
 
 module.exports = {
   config: {
