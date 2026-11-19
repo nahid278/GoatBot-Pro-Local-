@@ -7,7 +7,7 @@ const { loadImage, createCanvas } = require("canvas");
 module.exports = {
   config: {
     name: "kiss",
-    version: "2.1",
+    version: "2.2",
     author: "Nahid Hasan",
     countDown: 5,
     role: 0,
@@ -57,30 +57,76 @@ module.exports = {
 
       files = [avatar1Path, avatar2Path, outputPath];
 
-      // Get profile pictures using bot API
+      // Download profile picture
       const getAvatar = async (uid, savePath) => {
-        const info = await new Promise((resolve, reject) => {
-          api.getUserInfo(uid, (err, result) => {
-            if (err) return reject(err);
-            resolve(result);
+        let imageBuffer = null;
+
+        // Method 1: Bot API
+        try {
+          const info = await new Promise((resolve, reject) => {
+            api.getUserInfo(uid, (err, result) => {
+              if (err) return reject(err);
+              resolve(result);
+            });
           });
-        });
 
-        const profile = info?.[uid];
-        const avatarURL = profile?.thumbSrc || profile?.profileUrl;
+          const profile = info?.[uid];
+          const avatarURL =
+            profile?.thumbSrc ||
+            profile?.profileUrl ||
+            profile?.photoUrl;
 
-        if (!avatarURL) {
-          throw new Error("Profile picture URL not found for " + uid);
+          if (avatarURL) {
+            const response = await axios.get(avatarURL, {
+              responseType: "arraybuffer",
+              timeout: 20000,
+              headers: {
+                "User-Agent": "Mozilla/5.0"
+              }
+            });
+
+            imageBuffer = Buffer.from(response.data);
+            console.log("[KISS] Bot API avatar downloaded:", uid);
+          }
+        } catch (err) {
+          console.log("[KISS] Bot API avatar failed:", err.message);
         }
 
-        const response = await axios.get(avatarURL, {
-          responseType: "arraybuffer",
-          timeout: 20000
-        });
+        // Method 2: Graph API fallback
+        if (!imageBuffer || !imageBuffer.length) {
+          try {
+            const response = await axios.get(
+              `https://graph.facebook.com/${uid}/picture?width=720&height=720`,
+              {
+                responseType: "arraybuffer",
+                timeout: 20000,
+                maxRedirects: 5,
+                headers: {
+                  "User-Agent": "Mozilla/5.0"
+                }
+              }
+            );
 
-        await fs.writeFile(savePath, Buffer.from(response.data));
+            imageBuffer = Buffer.from(response.data);
+            console.log("[KISS] Graph avatar downloaded:", uid);
+          } catch (err) {
+            console.log("[KISS] Graph avatar failed:", err.message);
+          }
+        }
 
-        return loadImage(savePath);
+        if (!imageBuffer || !imageBuffer.length) {
+          throw new Error("Profile picture download failed: " + uid);
+        }
+
+        await fs.writeFile(savePath, imageBuffer);
+
+        const image = await loadImage(savePath);
+
+        if (!image.width || !image.height) {
+          throw new Error("Invalid profile image: " + uid);
+        }
+
+        return image;
       };
 
       const [img1, img2] = await Promise.all([
@@ -109,8 +155,12 @@ module.exports = {
       ctx.font = "42px sans-serif";
 
       [
-        [80, 100], [900, 100], [480, 130],
-        [100, 480], [900, 470], [500, 500]
+        [80, 100],
+        [900, 100],
+        [480, 130],
+        [100, 480],
+        [900, 470],
+        [500, 500]
       ].forEach(([x, y]) => {
         ctx.fillText("♥", x, y);
       });
@@ -143,8 +193,8 @@ module.exports = {
         ctx.clip();
 
         const scale = Math.max(
-          radius * 2 / img.width,
-          radius * 2 / img.height
+          (radius * 2) / img.width,
+          (radius * 2) / img.height
         );
 
         const width = img.width * scale;
@@ -182,20 +232,23 @@ module.exports = {
       ctx.fillStyle = "#ffe4f0";
       ctx.fillText("MADE WITH LOVE ♥", W / 2, 525);
 
-      // Save image
+      // Save card
       await fs.writeFile(
         outputPath,
         canvas.toBuffer("image/jpeg", { quality: 0.92 })
       );
 
-      // Send image
+      // Send card
       await message.reply({
         body: `💋 ${name1} Kissed ${name2}!\n💕 NAHID KISS`,
         attachment: fs.createReadStream(outputPath)
       });
 
     } catch (err) {
-      console.error("NAHID KISS ERROR:", err);
+      console.error("\n========== NAHID KISS ERROR ==========");
+      console.error("Message:", err.message);
+      console.error("Stack:", err.stack);
+      console.error("======================================\n");
 
       await message.reply(
         "🥹 Kiss Card তৈরি করা যায়নি!\nError: " +
@@ -206,7 +259,9 @@ module.exports = {
       for (const file of files) {
         try {
           await fs.remove(file);
-        } catch (err) {}
+        } catch (err) {
+          console.log("Cleanup error:", err.message);
+        }
       }
     }
   }
