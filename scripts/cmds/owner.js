@@ -1,12 +1,11 @@
 
 const fs = require("fs-extra");
-const request = require("request");
 const path = require("path");
 
 module.exports = {
   config: {
     name: "owner",
-    version: "2.1.0",
+    version: "2.2.0",
     author: "Nahid Hasan",
     role: 0,
     shortDescription: "Owner Information",
@@ -33,42 +32,35 @@ module.exports = {
 ✨ THANKS FOR VISITING
 `;
 
-    const cacheDir = path.join(__dirname, "cache");
-    const imgPath = path.join(cacheDir, "owner.jpg");
+    const imgPath = path.join(
+      __dirname,
+      "image",
+      "WhatsApp Image 2026-11-20 at 1.21.44 AM.jpg"
+    );
 
     try {
-      await fs.ensureDir(cacheDir);
+      if (!fs.existsSync(imgPath)) {
+        return api.sendMessage(
+          "❌ Owner image not found! Check the image folder and file name.",
+          event.threadID,
+          null,
+          event.messageID
+        );
+      }
 
-      const imgLink = "https://i.imgur.com/1G4ZhU7.jpeg";
-
-      request(imgLink)
-        .on("error", (err) => {
-          console.error("Owner image error:", err);
-          api.sendMessage(
-            ownerText,
-            event.threadID,
-            null,
-            event.messageID
-          );
-        })
-        .pipe(fs.createWriteStream(imgPath))
-        .on("finish", () => {
-          api.sendMessage(
-            {
-              body: ownerText,
-              attachment: fs.createReadStream(imgPath)
-            },
-            event.threadID,
-            (err) => {
-              if (fs.existsSync(imgPath)) {
-                fs.unlinkSync(imgPath);
-              }
-
-              if (err) console.error(err);
-            },
-            event.messageID
-          );
-        });
+      api.sendMessage(
+        {
+          body: ownerText,
+          attachment: fs.createReadStream(imgPath)
+        },
+        event.threadID,
+        (err) => {
+          if (err) {
+            console.error("Owner command error:", err);
+          }
+        },
+        event.messageID
+      );
 
     } catch (err) {
       console.error("Owner command error:", err);
