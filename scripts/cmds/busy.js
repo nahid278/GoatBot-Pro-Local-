@@ -5,18 +5,18 @@ if (!global.client.busyList)
 if (!global.client.nahidPending)
   global.client.nahidPending = {};
 
-const NAHID_NAME = "nahid";
-const WAIT_TIME = 2 * 60 * 1000;
+const NAHID_NAME = "test";
+const WAIT_TIME = 10 * 1000;
 
 module.exports = {
   config: {
     name: "busy",
-    version: "2.0",
+    version: "2.1",
     author: "Nahid Hasan",
     countDown: 5,
     role: 0,
     description: {
-      en: "Turn on busy mode and automatically detect when Nahid does not reply"
+      en: "Busy mode with automatic no-reply detection"
     },
     category: "box chat",
     guide: {
@@ -35,7 +35,7 @@ module.exports = {
       alreadyOn: "⚠️ | %1 is currently busy.",
       alreadyOnWithReason: "⚠️ | %1 is currently busy. Reason: %2",
       nahidBusy:
-        "🔕 | Nahid এখন Busy! ২ মিনিট অপেক্ষা করার পরও কোনো উত্তর পাওয়া যায়নি।"
+        "🔕 | Test এখন Busy! ১০ সেকেন্ড অপেক্ষা করার পরও কোনো উত্তর পাওয়া যায়নি।"
     }
   },
 
@@ -70,7 +70,7 @@ module.exports = {
   }) {
     const { senderID, threadID, body, mentions } = event;
 
-    // Nahid-এর নাম শনাক্ত করার চেষ্টা
+    // Sender name detect
     async function getSenderName(uid) {
       try {
         if (event.senderName) return event.senderName;
@@ -92,25 +92,26 @@ module.exports = {
     }
 
     const senderName = await getSenderName(senderID);
-    const isNahid = senderName.toLowerCase().includes(NAHID_NAME);
+    const isTestUser = senderName.toLowerCase().includes(NAHID_NAME);
 
-    // Nahid এই গ্রুপে উত্তর দিলে অপেক্ষমাণ টাইমার বাতিল
-    if (isNahid) {
+    // Test user replies within 10 seconds -> cancel timer
+    if (isTestUser) {
       const pending = global.client.nahidPending[threadID];
 
       if (pending) {
         clearTimeout(pending.timer);
         delete global.client.nahidPending[threadID];
+
+        console.log("[BUSY] Test replied. Timer cancelled.");
       }
 
       return;
     }
 
-    // মেসেজে Nahid নাম থাকলে ২ মিনিটের টাইমার চালু
+    // Detect test name in message
     const messageText = String(body || "");
 
-    if (/\bnahid\b/i.test(messageText)) {
-      // একই গ্রুপে আগে থেকেই টাইমার থাকলে নতুন করে চালু করবে না
+    if (new RegExp(`\\b${NAHID_NAME}\\b`, "i").test(messageText)) {
       if (!global.client.nahidPending[threadID]) {
         const timer = setTimeout(async () => {
           try {
@@ -130,18 +131,14 @@ module.exports = {
           startedAt: Date.now()
         };
 
-        if (typeof timer.unref === "function") {
-          timer.unref();
-        }
+        console.log("[BUSY] Test mentioned. 10 second timer started.");
       }
     }
 
-    // আগের manual busy feature
+    // Existing manual busy mention system
     if (!mentions || Object.keys(mentions).length === 0) return;
 
-    const arrayMentions = Object.keys(mentions);
-
-    for (const userID of arrayMentions) {
+    for (const userID of Object.keys(mentions)) {
       const reasonBusy =
         global.db.allUserData.find(
           item => String(item.userID) === String(userID)
