@@ -10,7 +10,7 @@ const mahmud = async () => {
   );
 
   if (!base.data || !base.data.mahmud) {
-    throw new Error("API base URL not found");
+    throw new Error("API base URL not found in baseApiUrl.json");
   }
 
   return base.data.mahmud.replace(/\/+$/, "");
@@ -37,25 +37,31 @@ module.exports = {
     let imgPath;
 
     try {
-      const obfuscatedAuthor = String.fromCharCode(77, 97, 104, 77, 85, 68);
+      const obfuscatedAuthor = String.fromCharCode(
+        77, 97, 104, 77, 85, 68
+      );
 
       if (module.exports.config.author.trim() !== obfuscatedAuthor) {
-        return message.reply(
-          "❌ | You are not authorized to change the author name."
+        return api.sendMessage(
+          "❌ | You are not authorized to change the author name.",
+          event.threadID,
+          event.messageID
         );
       }
 
-      const mentions = Object.keys(event.mentions || {});
+      const mention = Object.keys(event.mentions || {});
 
-      if (mentions.length === 0) {
+      if (mention.length === 0) {
         return message.reply("Please mention someone to kiss 💋");
       }
 
       const senderID = event.senderID;
-      const targetID = mentions[0];
+      const targetID = mention[0];
 
       const base = await mahmud();
       const apiURL = `${base}/api/kiss`;
+
+      console.log("[KISS] API URL:", apiURL);
 
       const response = await axios.post(
         apiURL,
@@ -65,61 +71,52 @@ module.exports = {
           timeout: 60000,
           headers: {
             "Content-Type": "application/json",
-            "Accept": "image/png, image/jpeg, image/*"
+            Accept: "image/png, image/jpeg, image/*"
           },
-          maxContentLength: 20 * 1024 * 1024,
-          maxBodyLength: 20 * 1024 * 1024
+          validateStatus: status => status >= 200 && status < 300
         }
       );
 
       const imageBuffer = Buffer.from(response.data);
 
-      // Check whether the API actually returned an image
-      const isPNG =
-        imageBuffer.length > 8 &&
-        imageBuffer.subarray(0, 8).equals(
-          Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
-        );
-
-      const isJPG =
-        imageBuffer.length > 3 &&
-        imageBuffer[0] === 0xFF &&
-        imageBuffer[1] === 0xD8 &&
-        imageBuffer[2] === 0xFF;
-
-      if (!isPNG && !isJPG) {
-        const errorText = imageBuffer.toString("utf8").slice(0, 500);
+      if (
+        !imageBuffer.length ||
+        !response.headers["content-type"]?.startsWith("image/")
+      ) {
         throw new Error(
-          "API did not return an image: " + errorText
+          "API did not return an image. Content-Type: " +
+          response.headers["content-type"]
         );
       }
 
-      const cacheDir = path.join(__dirname, "cache");
-      await fs.ensureDir(cacheDir);
-
       imgPath = path.join(
-        cacheDir,
-        `kiss_${senderID}_${targetID}_${Date.now()}.${isPNG ? "png" : "jpg"}`
+        __dirname,
+        `kiss_${senderID}_${targetID}_${Date.now()}.png`
       );
 
       await fs.writeFile(imgPath, imageBuffer);
 
-      // Send image and wait until sending finishes
       await message.reply({
         body: "💋 Here's your kiss image!",
         attachment: fs.createReadStream(imgPath)
       });
 
     } catch (err) {
+      console.error("\n========== KISS COMMAND ERROR ==========");
+      console.error("Message:", err.message);
+      console.error("Status:", err.response?.status);
       console.error(
-        "KISS COMMAND ERROR:",
+        "API Response:",
         err.response?.data
-          ? Buffer.from(err.response.data).toString("utf8").slice(0, 500)
-          : err.stack || err.message || err
+          ? Buffer.from(err.response.data).toString().slice(0, 1000)
+          : "No response"
       );
+      console.error("URL:", err.config?.url);
+      console.error("========================================\n");
 
-      message.reply(
-        "🥹 Kiss image তৈরি করা যায়নি। API server বা image generation সমস্যা হতে পারে।"
+      await message.reply(
+        "🥹 Kiss image তৈরি করা যায়নি!\n" +
+        "Error: " + (err.message || "Unknown error")
       );
 
     } finally {
@@ -127,7 +124,7 @@ module.exports = {
         try {
           await fs.unlink(imgPath);
         } catch (e) {
-          console.error("Kiss image cleanup error:", e.message);
+          console.error("[KISS] File cleanup error:", e.message);
         }
       }
     }
