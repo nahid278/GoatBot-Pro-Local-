@@ -1,130 +1,192 @@
 
-const axios = require("axios");
 const fs = require("fs-extra");
+const axios = require("axios");
 const path = require("path");
-
-const mahmud = async () => {
-  const base = await axios.get(
-    "https://raw.githubusercontent.com/mahmudx7/HINATA/main/baseApiUrl.json",
-    { timeout: 15000 }
-  );
-
-  if (!base.data || !base.data.mahmud) {
-    throw new Error("API base URL not found in baseApiUrl.json");
-  }
-
-  return base.data.mahmud.replace(/\/+$/, "");
-};
-
-/**
- * @author MahMUD
- * @author: do not delete it
- */
+const { loadImage, createCanvas } = require("canvas");
 
 module.exports = {
   config: {
     name: "kiss",
-    version: "1.7",
-    author: "MahMUD",
+    version: "2.0.0",
+    author: "Nahid",
     countDown: 5,
     role: 0,
-    longDescription: "Generate anime-style kiss image",
+    description: {
+      en: "Create a kiss card with a mentioned member"
+    },
     category: "love",
-    guide: "{pn} @mention"
+    guide: {
+      en: "{pn} @mention"
+    }
   },
 
-  onStart: async function ({ message, event, api }) {
+  onStart: async function ({ message, event, api, usersData }) {
     let imgPath;
+    let avatar1Path;
+    let avatar2Path;
 
     try {
-      const obfuscatedAuthor = String.fromCharCode(
-        77, 97, 104, 77, 85, 68
-      );
+      const mentions = Object.keys(event.mentions || {});
 
-      if (module.exports.config.author.trim() !== obfuscatedAuthor) {
-        return api.sendMessage(
-          "❌ | You are not authorized to change the author name.",
-          event.threadID,
-          event.messageID
-        );
-      }
-
-      const mention = Object.keys(event.mentions || {});
-
-      if (mention.length === 0) {
-        return message.reply("Please mention someone to kiss 💋");
+      if (mentions.length === 0) {
+        return message.reply("💋 Please mention someone to kiss!");
       }
 
       const senderID = event.senderID;
-      const targetID = mention[0];
+      const targetID = mentions[0];
 
-      const base = await mahmud();
-      const apiURL = `${base}/api/kiss`;
+      const [user1, user2] = await Promise.all([
+        usersData.get(senderID),
+        usersData.get(targetID)
+      ]);
 
-      console.log("[KISS] API URL:", apiURL);
+      const name1 = user1?.name || "Someone";
+      const name2 = user2?.name || "Someone";
 
-      const response = await axios.post(
-        apiURL,
-        { senderID, targetID },
-        {
-          responseType: "arraybuffer",
-          timeout: 60000,
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "image/png, image/jpeg, image/*"
-          },
-          validateStatus: status => status >= 200 && status < 300
-        }
-      );
+      const cacheDir = path.join(__dirname, "cache");
+      await fs.ensureDir(cacheDir);
 
-      const imageBuffer = Buffer.from(response.data);
+      const ts = Date.now();
 
-      if (
-        !imageBuffer.length ||
-        !response.headers["content-type"]?.startsWith("image/")
-      ) {
-        throw new Error(
-          "API did not return an image. Content-Type: " +
-          response.headers["content-type"]
+      imgPath = path.join(cacheDir, `nahid_kiss_${ts}.jpg`);
+      avatar1Path = path.join(cacheDir, `nahid_avt1_${ts}.jpg`);
+      avatar2Path = path.join(cacheDir, `nahid_avt2_${ts}.jpg`);
+
+      const getAvatar = async (uid, savePath) => {
+        const response = await axios.get(
+          `https://graph.facebook.com/${uid}/picture?height=720&width=720`,
+          {
+            responseType: "arraybuffer",
+            timeout: 20000
+          }
         );
+
+        await fs.writeFile(savePath, Buffer.from(response.data));
+        return loadImage(savePath);
+      };
+
+      const [img1, img2] = await Promise.all([
+        getAvatar(senderID, avatar1Path),
+        getAvatar(targetID, avatar2Path)
+      ]);
+
+      const W = 1000;
+      const H = 550;
+
+      const canvas = createCanvas(W, H);
+      const ctx = canvas.getContext("2d");
+
+      // Background
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, "#ff9aaf");
+      bg.addColorStop(0.5, "#ff4f91");
+      bg.addColorStop(1, "#a83279");
+
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // Decorative hearts
+      ctx.font = "40px sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+
+      [
+        [100, 100], [880, 90], [500, 100],
+        [130, 460], [870, 450], [500, 490]
+      ].forEach(([x, y]) => {
+        ctx.fillText("♥", x, y);
+      });
+
+      // Title
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 48px sans-serif";
+      ctx.fillText("NAHID KISS", W / 2, 65);
+
+      // Avatar positions
+      const r = 155;
+      const cy = 275;
+      const x1 = 250;
+      const x2 = 750;
+
+      function drawAvatar(img, x) {
+        ctx.save();
+
+        ctx.shadowColor = "#8b174e";
+        ctx.shadowBlur = 25;
+
+        ctx.beginPath();
+        ctx.arc(x, cy, r + 8, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(x, cy, r, 0, Math.PI * 2);
+        ctx.clip();
+
+        const scale = Math.max(
+          (r * 2) / img.width,
+          (r * 2) / img.height
+        );
+
+        const width = img.width * scale;
+        const height = img.height * scale;
+
+        ctx.drawImage(
+          img,
+          x - width / 2,
+          cy - height / 2,
+          width,
+          height
+        );
+
+        ctx.restore();
       }
 
-      imgPath = path.join(
-        __dirname,
-        `kiss_${senderID}_${targetID}_${Date.now()}.png`
+      drawAvatar(img1, x1);
+      drawAvatar(img2, x2);
+
+      // Kiss emoji
+      ctx.textAlign = "center";
+      ctx.font = "100px sans-serif";
+      ctx.fillText("💋", W / 2, cy + 35);
+
+      // Names
+      ctx.font = "bold 28px sans-serif";
+      ctx.fillStyle = "#ffffff";
+
+      ctx.fillText(name1.slice(0, 20), x1, 475);
+      ctx.fillText(name2.slice(0, 20), x2, 475);
+
+      // Footer
+      ctx.font = "bold 22px sans-serif";
+      ctx.fillStyle = "#ffe4f0";
+      ctx.fillText("MADE WITH LOVE ♥", W / 2, 525);
+
+      await fs.writeFile(
+        imgPath,
+        canvas.toBuffer("image/jpeg", { quality: 0.92 })
       );
 
-      await fs.writeFile(imgPath, imageBuffer);
-
       await message.reply({
-        body: "💋 Here's your kiss image!",
+        body: `💋 ${name1} kissed ${name2}!\n\n💕 NAHID KISS CARD`,
         attachment: fs.createReadStream(imgPath)
       });
 
     } catch (err) {
-      console.error("\n========== KISS COMMAND ERROR ==========");
-      console.error("Message:", err.message);
-      console.error("Status:", err.response?.status);
-      console.error(
-        "API Response:",
-        err.response?.data
-          ? Buffer.from(err.response.data).toString().slice(0, 1000)
-          : "No response"
-      );
-      console.error("URL:", err.config?.url);
-      console.error("========================================\n");
+      console.error("[NAHID KISS ERROR]", err);
 
-      await message.reply(
-        "🥹 Kiss image তৈরি করা যায়নি!\n" +
+      message.reply(
+        "❌ Kiss Card তৈরি করা যায়নি!\n" +
         "Error: " + (err.message || "Unknown error")
       );
 
     } finally {
-      if (imgPath && await fs.pathExists(imgPath)) {
-        try {
-          await fs.unlink(imgPath);
-        } catch (e) {
-          console.error("[KISS] File cleanup error:", e.message);
+      for (const file of [imgPath, avatar1Path, avatar2Path]) {
+        if (file) {
+          try {
+            await fs.remove(file);
+          } catch (e) {}
         }
       }
     }
