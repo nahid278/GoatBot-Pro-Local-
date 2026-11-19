@@ -25,19 +25,14 @@ module.exports = {
   langs: {
     en: {
       noMembers: "❌ | Not enough members in this group!",
-      noGender: "❌ | Your Facebook gender information could not be detected. Please try again.",
-      noMatch: "❌ | No opposite-gender member found in this group!",
-      avatarError: "❌ | Failed to load Facebook profile pictures.",
       error: "❌ | Failed to generate pair. Please try again.",
+      avatarError: "❌ | Failed to load profile pictures.",
       result: "💕 TODAY'S PERFECT COUPLE 💕\n\n👑 %1\n❤️ + ❤️\n👑 %2\n\n💗 Compatibility: %3%\n\n✨ Made for each other!"
     },
-
     bn: {
       noMembers: "❌ | গ্রুপে পর্যাপ্ত সদস্য নেই!",
-      noGender: "❌ | তোমার Facebook Gender শনাক্ত করা যায়নি। আবার চেষ্টা করো।",
-      noMatch: "❌ | গ্রুপে বিপরীত Gender-এর কোনো সদস্য পাওয়া যায়নি!",
-      avatarError: "❌ | Facebook Profile Picture লোড করা যায়নি।",
       error: "❌ | জুটি তৈরি করতে সমস্যা হয়েছে। আবার চেষ্টা করো।",
+      avatarError: "❌ | Profile Picture লোড করা যায়নি।",
       result: "💕 আজকের সেরা জুটি 💕\n\n👑 %1\n❤️ + ❤️\n👑 %2\n\n💗 ভালোবাসার মিল: %3%\n\n✨ Made for each other!"
     }
   },
@@ -53,11 +48,9 @@ module.exports = {
     const { threadID, senderID } = event;
 
     const cacheDir = path.join(__dirname, "cache");
-
     let outputPath = null;
 
     try {
-
       await fs.ensureDir(cacheDir);
 
       // Get group information
@@ -72,104 +65,102 @@ module.exports = {
           id !== String(senderID)
         );
 
-      if (members.length === 0) {
+      if (members.length < 1) {
         return message.reply(getLang("noMembers"));
       }
 
-      // Get and refresh user gender
+      // Get sender information
+      const user1 = await usersData.get(senderID);
+      const name1 = user1?.name || "Unknown";
+
+      // Get random second member
+      const randomMember = () => {
+        return members[
+          Math.floor(Math.random() * members.length)
+        ];
+      };
+
+      // Get gender
       const getGender = async (uid) => {
-
         try {
-
-          await usersData.refreshInfo(uid);
-
           const user = await usersData.get(uid);
 
-          const gender = user?.gender ??
-                         user?.data?.gender;
-
-          const value = Number(gender);
-
-          // Facebook gender:
-          // 1 = Female
-          // 2 = Male
-
-          if (value === 1 || value === 2) {
-            return value;
-          }
-
-          return 0;
-
-        } catch (err) {
-
-          console.log(
-            "[PAIR GENDER ERROR]",
-            uid,
-            err.message
+          const gender = Number(
+            user?.gender ??
+            user?.data?.gender ??
+            0
           );
 
+          return [1, 2].includes(gender) ? gender : 0;
+        } catch (err) {
           return 0;
         }
       };
 
-      // Get sender gender
-      const senderGender = await getGender(senderID);
+      const gender1 = await getGender(senderID);
 
-      if (![1, 2].includes(senderGender)) {
-        return message.reply(getLang("noGender"));
-      }
+      let id2;
 
-      // Find opposite gender members
-      const oppositeMembers = [];
+      // 80% chance for opposite gender pair
+      // 10% chance for male-male
+      // 10% chance for female-female
 
-      for (const uid of members) {
+      const roll = Math.random() * 100;
 
-        const gender = await getGender(uid);
+      if (gender1 === 1 || gender1 === 2) {
 
-        if (
-          senderGender === 1 && gender === 2 ||
-          senderGender === 2 && gender === 1
-        ) {
-          oppositeMembers.push(uid);
+        const targetGender = roll < 80
+          ? (gender1 === 1 ? 2 : 1)
+          : roll < 90
+            ? 2
+            : 1;
+
+        const matchingMembers = [];
+
+        for (const uid of members) {
+          const gender = await getGender(uid);
+
+          if (gender === targetGender) {
+            matchingMembers.push(uid);
+          }
         }
+
+        if (matchingMembers.length > 0) {
+          id2 = matchingMembers[
+            Math.floor(Math.random() * matchingMembers.length)
+          ];
+        } else {
+          // Fallback: always select someone
+          id2 = randomMember();
+        }
+
+      } else {
+
+        // Unknown gender: select completely randomly
+        id2 = randomMember();
+
       }
 
-      // No opposite gender found
-      if (oppositeMembers.length === 0) {
-        return message.reply(getLang("noMatch"));
-      }
-
-      // Select random opposite gender member
-      const id2 = oppositeMembers[
-        Math.floor(Math.random() * oppositeMembers.length)
-      ];
+      // Get selected member information
+      const user2 = await usersData.get(id2);
+      const name2 = user2?.name || "Unknown";
 
       // Compatibility
       const compatibility =
         Math.floor(Math.random() * 51) + 50;
 
-      // Get user names
-      const [user1, user2] = await Promise.all([
-        usersData.get(senderID),
-        usersData.get(id2)
-      ]);
-
-      const name1 = user1?.name || "Unknown";
-      const name2 = user2?.name || "Unknown";
-
-      // Get Facebook profile pictures
+      // Get profile picture URLs
       const [avatar1, avatar2] = await Promise.all([
         usersData.getAvatarUrl(senderID),
         usersData.getAvatarUrl(id2)
       ]);
 
       if (!avatar1 || !avatar2) {
-        return message.reply(getLang("avatarError"));
+        throw new Error("Profile picture URL not found");
       }
 
-      // Download profile pictures
+      // Download images
       const downloadImage = async (url) => {
-
         const response = await axios.get(url, {
           responseType: "arraybuffer",
           timeout: 20000,
@@ -182,25 +173,24 @@ module.exports = {
         return Buffer.from(response.data);
       };
 
-      const [buffer1, buffer2] = await Promise.all([
+      const [res1, res2] = await Promise.all([
         downloadImage(avatar1),
         downloadImage(avatar2)
       ]);
 
-      // Load images
       const [img1, img2] = await Promise.all([
-        loadImage(buffer1),
-        loadImage(buffer2)
+        loadImage(res1),
+        loadImage(res2)
       ]);
 
-      // Canvas setup
+      // Create Canvas
       const W = 800;
       const H = 400;
 
       const canvas = createCanvas(W, H);
       const ctx = canvas.getContext("2d");
 
-      // Background gradient
+      // Background Gradient
       const grad = ctx.createLinearGradient(0, 0, W, H);
 
       grad.addColorStop(0, "#ff6b6b");
@@ -210,43 +200,25 @@ module.exports = {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, W, H);
 
-      // Decorative hearts
-      ctx.globalAlpha = 0.15;
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "30px sans-serif";
-
-      for (let i = 0; i < 15; i++) {
-        ctx.fillText(
-          "♥",
-          Math.random() * W,
-          Math.random() * H
-        );
-      }
-
-      ctx.globalAlpha = 1;
-
-      // Draw circular avatar
+      // Draw First Avatar
       const r = 125;
       const avatarSize = r * 2;
-      const avatarY = 65;
+      const avatarY = H / 2 - r;
 
       const drawAvatar = (img, x) => {
-
         ctx.save();
 
         ctx.beginPath();
         ctx.arc(
           x + r,
-          avatarY + r,
+          H / 2,
           r,
           0,
           Math.PI * 2
         );
-
         ctx.closePath();
         ctx.clip();
 
-        // Center crop
         const scale = Math.max(
           avatarSize / img.width,
           avatarSize / img.height
@@ -255,13 +227,10 @@ module.exports = {
         const sw = avatarSize / scale;
         const sh = avatarSize / scale;
 
-        const sx = (img.width - sw) / 2;
-        const sy = (img.height - sh) / 2;
-
         ctx.drawImage(
           img,
-          sx,
-          sy,
+          (img.width - sw) / 2,
+          (img.height - sh) / 2,
           sw,
           sh,
           x,
@@ -272,12 +241,10 @@ module.exports = {
 
         ctx.restore();
 
-        // Avatar border
         ctx.beginPath();
-
         ctx.arc(
           x + r,
-          avatarY + r,
+          H / 2,
           r,
           0,
           Math.PI * 2
@@ -288,89 +255,40 @@ module.exports = {
         ctx.stroke();
       };
 
-      // First avatar
-      drawAvatar(img1, 35);
+      // Draw avatars
+      drawAvatar(img1, 30);
+      drawAvatar(img2, W - avatarSize - 30);
 
-      // Second avatar
-      drawAvatar(img2, W - avatarSize - 35);
-
-      // Center heart
-      ctx.font = "bold 55px sans-serif";
+      // Heart
+      ctx.font = "bold 60px sans-serif";
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
 
-      ctx.fillText(
-        "❤️",
-        W / 2,
-        190
-      );
-
-      // User names
-      ctx.font = "bold 21px sans-serif";
-      ctx.fillStyle = "#ffffff";
-
-      const fitText = (text, maxWidth) => {
-
-        let value = String(text);
-
-        while (
-          ctx.measureText(value).width > maxWidth &&
-          value.length > 3
-        ) {
-          value = value.slice(0, -1);
-        }
-
-        if (value !== text) {
-          value += "...";
-        }
-
-        return value;
-      };
-
-      ctx.fillText(
-        fitText(name1, 280),
-        160,
-        340
-      );
-
-      ctx.fillText(
-        fitText(name2, 280),
-        W - 160,
-        340
-      );
+      ctx.fillText("❤️", W / 2, H / 2 + 20);
 
       // Compatibility text
-      ctx.font = "bold 20px sans-serif";
+      const barW = 200;
+      const barH = 20;
+      const barX = W / 2 - barW / 2;
+      const barY = H - 55;
+
+      ctx.font = "bold 16px sans-serif";
       ctx.fillStyle = "#ffffff";
 
       ctx.fillText(
-        compatibility + "% COMPATIBILITY",
+        compatibility + "% Compatible",
         W / 2,
-        260
+        barY - 8
       );
 
-      // Compatibility bar
-      const barW = 250;
-      const barH = 16;
-
-      const barX = (W - barW) / 2;
-      const barY = 275;
-
+      // Background bar
       ctx.beginPath();
-
-      ctx.roundRect(
-        barX,
-        barY,
-        barW,
-        barH,
-        10
-      );
-
+      ctx.roundRect(barX, barY, barW, barH, 10);
       ctx.fillStyle = "rgba(255,255,255,0.3)";
       ctx.fill();
 
+      // Progress bar
       ctx.beginPath();
-
       ctx.roundRect(
         barX,
         barY,
@@ -379,28 +297,8 @@ module.exports = {
         10
       );
 
-      const barGradient = ctx.createLinearGradient(
-        barX,
-        0,
-        barX + barW,
-        0
-      );
-
-      barGradient.addColorStop(0, "#ffb6c1");
-      barGradient.addColorStop(1, "#ffffff");
-
-      ctx.fillStyle = barGradient;
-      ctx.fill();
-
-      // Footer
-      ctx.font = "15px sans-serif";
       ctx.fillStyle = "#ffffff";
-
-      ctx.fillText(
-        "MADE WITH LOVE ❤️",
-        W / 2,
-        375
-      );
+      ctx.fill();
 
       // Save image
       outputPath = path.join(
@@ -423,7 +321,6 @@ module.exports = {
         compatibility
       );
 
-      // Send result
       await message.reply({
         body,
         attachment: fs.createReadStream(outputPath)
@@ -437,19 +334,14 @@ module.exports = {
 
     } finally {
 
-      // Remove temporary image
-      try {
-
-        if (outputPath && await fs.pathExists(outputPath)) {
-          await fs.remove(outputPath);
+      if (outputPath) {
+        try {
+          if (await fs.pathExists(outputPath)) {
+            await fs.remove(outputPath);
+          }
+        } catch (err) {
+          console.error("[PAIR CLEANUP ERROR]", err);
         }
-
-      } catch (cleanupError) {
-
-        console.error(
-          "[PAIR CLEANUP ERROR]",
-          cleanupError
-        );
       }
     }
   }
