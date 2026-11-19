@@ -2,43 +2,43 @@
 if (!global.client.nahidPending)
   global.client.nahidPending = {};
 
-const TARGET_UID = "100012345678901"; // Demo Facebook UID
-const TARGET_NAME = "rahim";
+const TARGET_UID = "100066315452598";
+const TARGET_NAME = "nahid";
 const WAIT_TIME = 10 * 1000;
 
 module.exports = {
   config: {
     name: "busy",
-    version: "4.0",
+    version: "4.1",
     author: "Nahid Hasan",
     countDown: 3,
     role: 0,
     description: {
-      en: "Automatic busy detection"
+      en: "Automatic busy detection for Nahid"
     },
     category: "box chat",
     guide: {
-      en: "{pn}: Test automatic busy detection"
+      en: "{pn}: Check busy system"
     }
   },
 
   onStart: async function ({ message }) {
     return message.reply(
-      "✅ Busy test started!\nTarget: rahim\nUID: " +
-      TARGET_UID +
-      "\nWait: 10 seconds"
+      "✅ Nahid Busy System Active!\n" +
+      "UID: " + TARGET_UID + "\n" +
+      "Wait Time: 10 Seconds"
     );
   },
 
   onChat: async function ({ event, api }) {
     const { senderID, threadID, body } = event;
 
-    console.log("========== BUSY TEST ==========");
+    console.log("========== BUSY SYSTEM ==========");
     console.log("Sender UID:", senderID);
     console.log("Message:", body);
-    console.log("===============================");
+    console.log("=================================");
 
-    // Target user replied
+    // Nahid replies: cancel pending timer
     if (String(senderID) === TARGET_UID) {
       const pending = global.client.nahidPending[threadID];
 
@@ -46,24 +46,24 @@ module.exports = {
         clearTimeout(pending);
         delete global.client.nahidPending[threadID];
 
-        console.log("[BUSY] Rahim replied. Timer cancelled.");
+        console.log("[BUSY] Nahid replied. Timer cancelled.");
       }
 
       return;
     }
 
-    // Detect target name in message
+    // Detect Nahid name in message
     const regex = new RegExp(`\\b${TARGET_NAME}\\b`, "i");
 
     if (regex.test(String(body || ""))) {
       if (global.client.nahidPending[threadID]) return;
 
-      console.log("[BUSY] Rahim mentioned. Timer started.");
+      console.log("[BUSY] Nahid mentioned. Timer started.");
 
       const timer = setTimeout(async () => {
         try {
           await api.sendMessage(
-            "🔕 Rahim এখন Busy! ১০ সেকেন্ডেও কোনো উত্তর পাওয়া যায়নি।",
+            "🔕 Nahid এখন Busy! ১০ সেকেন্ডেও কোনো উত্তর পাওয়া যায়নি।",
             threadID
           );
         } catch (error) {
