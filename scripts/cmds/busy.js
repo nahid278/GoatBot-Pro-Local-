@@ -1,169 +1,84 @@
 
-if (!global.client.busyList)
-  global.client.busyList = {};
-
 if (!global.client.nahidPending)
   global.client.nahidPending = {};
 
-const NAHID_NAME = "nahid";
+const TARGET_NAME = "rahim";
 const WAIT_TIME = 10 * 1000;
 
 module.exports = {
   config: {
     name: "busy",
-    version: "2.2",
+    version: "3.1",
     author: "Nahid Hasan",
-    countDown: 5,
+    countDown: 3,
     role: 0,
     description: {
-      en: "Busy mode with automatic no-reply detection"
+      en: "Automatic busy detection test"
     },
     category: "box chat",
     guide: {
-      en:
-        "{pn}: Turn on busy mode\n" +
-        "{pn} <reason>: Turn on busy mode with a reason\n" +
-        "{pn} off: Turn off busy mode"
+      en: "{pn}: Test automatic busy detection"
     }
   },
 
-  langs: {
-    en: {
-      turnedOff: "✅ | Busy mode has been turned off.",
-      turnedOn: "✅ | Busy mode has been turned on.",
-      turnedOnWithReason: "✅ | Busy mode has been turned on. Reason: %1",
-      alreadyOn: "⚠️ | %1 is currently busy.",
-      alreadyOnWithReason: "⚠️ | %1 is currently busy. Reason: %2",
-      nahidBusy: "🔕 | Nahid এখন Busy! ১০ সেকেন্ড অপেক্ষা করেও কোনো উত্তর পাওয়া যায়নি।"
-    }
-  },
-
-  onStart: async function ({ args, message, event, getLang, usersData }) {
-    const { senderID } = event;
-
-    if (args[0] === "off") {
-      const { data } = await usersData.get(senderID);
-      delete data.busy;
-
-      await usersData.set(senderID, data, "data");
-      return message.reply(getLang("turnedOff"));
-    }
-
-    const reason = args.join(" ").trim();
-
-    await usersData.set(senderID, reason, "data.busy");
-
+  onStart: async function ({ message }) {
     return message.reply(
-      reason
-        ? getLang("turnedOnWithReason", reason)
-        : getLang("turnedOn")
+      "✅ Busy test system is running!\nTarget: rahim\nWait: 10 seconds"
     );
   },
 
-  onChat: async function ({
-    event,
-    message,
-    getLang,
-    usersData,
-    api
-  }) {
-    const { senderID, threadID, body, mentions } = event;
+  onChat: async function ({ event, api }) {
+    const { senderID, threadID, body } = event;
 
-    // Find sender name from bot database
-    async function getSenderName(uid) {
-      try {
-        if (event.senderName) return event.senderName;
+    console.log("========== BUSY TEST ==========");
+    console.log("Sender ID:", senderID);
+    console.log("Sender Name:", event.senderName);
+    console.log("Message:", body);
+    console.log("===============================");
 
-        const user = global.db?.allUserData?.find(
-          item => String(item.userID) === String(uid)
-        );
+    const senderName = String(
+      event.senderName ||
+      event.sender?.name ||
+      event.userName ||
+      ""
+    ).toLowerCase();
 
-        if (user?.name) return user.name;
-        if (user?.data?.name) return user.data.name;
-
-        if (usersData && typeof usersData.getName === "function") {
-          const name = await usersData.getName(uid);
-          if (name) return name;
-        }
-      } catch (error) {
-        console.error("[BUSY] Name detection error:", error);
-      }
-
-      return "";
-    }
-
-    const senderName = await getSenderName(senderID);
-
-    // Check if Nahid replied
-    const isNahid = senderName.toLowerCase().includes(NAHID_NAME);
-
-    if (isNahid) {
+    // Target person replied: cancel timer
+    if (senderName.includes(TARGET_NAME)) {
       const pending = global.client.nahidPending[threadID];
 
       if (pending) {
-        clearTimeout(pending.timer);
+        clearTimeout(pending);
         delete global.client.nahidPending[threadID];
 
-        console.log("[BUSY] Nahid replied. Timer cancelled.");
+        console.log("[BUSY TEST] Rahim replied. Timer cancelled.");
       }
 
       return;
     }
 
-    // Detect Nahid name in message
-    const messageText = String(body || "");
+    // Detect target name in message
+    const regex = new RegExp(`\\b${TARGET_NAME}\\b`, "i");
 
-    if (/\bnahid\b/i.test(messageText)) {
-      if (!global.client.nahidPending[threadID]) {
-        console.log("[BUSY] Nahid mentioned. Timer started.");
+    if (regex.test(String(body || ""))) {
+      if (global.client.nahidPending[threadID]) return;
 
-        const timer = setTimeout(async () => {
-          try {
-            await api.sendMessage(
-              getLang("nahidBusy"),
-              threadID
-            );
-          } catch (error) {
-            console.error("[BUSY] Send error:", error);
-          }
+      console.log("[BUSY TEST] Rahim mentioned. Timer started.");
 
-          delete global.client.nahidPending[threadID];
-        }, WAIT_TIME);
-
-        global.client.nahidPending[threadID] = {
-          timer,
-          startedAt: Date.now()
-        };
-
-        if (typeof timer.unref === "function") {
-          timer.unref();
+      const timer = setTimeout(async () => {
+        try {
+          await api.sendMessage(
+            "🔕 Rahim এখন Busy! ১০ সেকেন্ডেও কোনো উত্তর পাওয়া যায়নি।",
+            threadID
+          );
+        } catch (error) {
+          console.log("[BUSY TEST ERROR]", error);
         }
-      }
-    }
 
-    // Existing manual busy mention system
-    if (!mentions || Object.keys(mentions).length === 0) return;
+        delete global.client.nahidPending[threadID];
+      }, WAIT_TIME);
 
-    for (const userID of Object.keys(mentions)) {
-      const reasonBusy =
-        global.db.allUserData.find(
-          item => String(item.userID) === String(userID)
-        )?.data?.busy || false;
-
-      if (reasonBusy !== false) {
-        return message.reply(
-          reasonBusy
-            ? getLang(
-                "alreadyOnWithReason",
-                mentions[userID].replace("@", ""),
-                reasonBusy
-              )
-            : getLang(
-                "alreadyOn",
-                mentions[userID].replace("@", "")
-              )
-        );
-      }
+      global.client.nahidPending[threadID] = timer;
     }
   }
 };
