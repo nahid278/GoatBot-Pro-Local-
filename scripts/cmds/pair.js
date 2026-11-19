@@ -7,29 +7,37 @@ const { loadImage, createCanvas } = require("canvas");
 module.exports = {
   config: {
     name: "pair",
-    version: "2.0.0",
+    version: "3.0.0",
     author: "Nahid Hasan",
     countDown: 5,
     role: 0,
     description: {
-      en: "Find a random couple in the group",
-      bn: "গ্রুপের Random Couple খুঁজে বের করো"
+      en: "Find today's random couple in the group",
+      bn: "আজকের Random জুটি খুঁজে বের করো"
     },
     category: "fun",
     guide: {
-      en: "{pn}"
+      en: "{pn}",
+      bn: "{pn}"
     }
   },
 
   langs: {
     en: {
       noMembers: "❌ | Not enough members in this group!",
-      error: "❌ | Something went wrong. Please try again.",
+      noGender: "❌ | Your Facebook gender information could not be detected. Please try again.",
+      noMatch: "❌ | No opposite-gender member found in this group!",
+      avatarError: "❌ | Failed to load Facebook profile pictures.",
+      error: "❌ | Failed to generate pair. Please try again.",
       result: "💕 TODAY'S PERFECT COUPLE 💕\n\n👑 %1\n❤️ + ❤️\n👑 %2\n\n💗 Compatibility: %3%\n\n✨ Made for each other!"
     },
+
     bn: {
-      noMembers: "❌ | গ্রুপে Pair করার মতো পর্যাপ্ত সদস্য নেই!",
-      error: "❌ | Pair তৈরি করতে সমস্যা হয়েছে। আবার চেষ্টা করো।",
+      noMembers: "❌ | গ্রুপে পর্যাপ্ত সদস্য নেই!",
+      noGender: "❌ | তোমার Facebook Gender শনাক্ত করা যায়নি। আবার চেষ্টা করো।",
+      noMatch: "❌ | গ্রুপে বিপরীত Gender-এর কোনো সদস্য পাওয়া যায়নি!",
+      avatarError: "❌ | Facebook Profile Picture লোড করা যায়নি।",
+      error: "❌ | জুটি তৈরি করতে সমস্যা হয়েছে। আবার চেষ্টা করো।",
       result: "💕 আজকের সেরা জুটি 💕\n\n👑 %1\n❤️ + ❤️\n👑 %2\n\n💗 ভালোবাসার মিল: %3%\n\n✨ Made for each other!"
     }
   },
@@ -38,113 +46,133 @@ module.exports = {
     event,
     message,
     getLang,
-    threadsData,
     usersData,
     api
   }) {
 
+    const { threadID, senderID } = event;
+
+    const cacheDir = path.join(__dirname, "cache");
+
     let outputPath = null;
 
     try {
-      const { threadID, senderID } = event;
+
+      await fs.ensureDir(cacheDir);
 
       // Get group information
       const threadInfo = await api.getThreadInfo(threadID);
 
-      const botID = api.getCurrentUserID();
+      const botID = String(api.getCurrentUserID());
 
-      const members = threadInfo.participantIDs.filter(
-        id => String(id) !== String(botID) &&
-              String(id) !== String(senderID)
-      );
+      const members = (threadInfo.participantIDs || [])
+        .map(id => String(id))
+        .filter(id =>
+          id !== botID &&
+          id !== String(senderID)
+        );
 
-      if (members.length < 1) {
+      if (members.length === 0) {
         return message.reply(getLang("noMembers"));
       }
 
-      // Random member selection
-      const id1 = senderID;
-      const id2 = members[
-        Math.floor(Math.random() * members.length)
+      // Get and refresh user gender
+      const getGender = async (uid) => {
+
+        try {
+
+          await usersData.refreshInfo(uid);
+
+          const user = await usersData.get(uid);
+
+          const gender = user?.gender ??
+                         user?.data?.gender;
+
+          const value = Number(gender);
+
+          // Facebook gender:
+          // 1 = Female
+          // 2 = Male
+
+          if (value === 1 || value === 2) {
+            return value;
+          }
+
+          return 0;
+
+        } catch (err) {
+
+          console.log(
+            "[PAIR GENDER ERROR]",
+            uid,
+            err.message
+          );
+
+          return 0;
+        }
+      };
+
+      // Get sender gender
+      const senderGender = await getGender(senderID);
+
+      if (![1, 2].includes(senderGender)) {
+        return message.reply(getLang("noGender"));
+      }
+
+      // Find opposite gender members
+      const oppositeMembers = [];
+
+      for (const uid of members) {
+
+        const gender = await getGender(uid);
+
+        if (
+          senderGender === 1 && gender === 2 ||
+          senderGender === 2 && gender === 1
+        ) {
+          oppositeMembers.push(uid);
+        }
+      }
+
+      // No opposite gender found
+      if (oppositeMembers.length === 0) {
+        return message.reply(getLang("noMatch"));
+      }
+
+      // Select random opposite gender member
+      const id2 = oppositeMembers[
+        Math.floor(Math.random() * oppositeMembers.length)
       ];
 
-      const compatibility = Math.floor(
-        Math.random() * 51
-      ) + 50;
+      // Compatibility
+      const compatibility =
+        Math.floor(Math.random() * 51) + 50;
 
       // Get user names
       const [user1, user2] = await Promise.all([
-        usersData.get(id1),
+        usersData.get(senderID),
         usersData.get(id2)
       ]);
 
       const name1 = user1?.name || "Unknown";
       const name2 = user2?.name || "Unknown";
 
-      // Get Facebook profile information
-      const getUserInfo = (uid) => {
-        return new Promise((resolve) => {
-          if (typeof api.getUserInfo !== "function") {
-            return resolve(null);
-          }
-
-          let completed = false;
-
-          const finish = (data) => {
-            if (completed) return;
-            completed = true;
-            resolve(data || null);
-          };
-
-          try {
-            const result = api.getUserInfo([uid], (err, data) => {
-              if (err) return finish(null);
-
-              finish(
-                data?.[uid] ||
-                data?.[String(uid)] ||
-                null
-              );
-            });
-
-            if (result && typeof result.then === "function") {
-              result.then(data => {
-                finish(
-                  data?.[uid] ||
-                  data?.[String(uid)] ||
-                  null
-                );
-              }).catch(() => finish(null));
-            }
-          } catch (e) {
-            finish(null);
-          }
-        });
-      };
-
-      const [info1, info2] = await Promise.all([
-        getUserInfo(id1),
-        getUserInfo(id2)
+      // Get Facebook profile pictures
+      const [avatar1, avatar2] = await Promise.all([
+        usersData.getAvatarUrl(senderID),
+        usersData.getAvatarUrl(id2)
       ]);
 
-      // Find profile picture URLs
-      const getPictureURL = (info, uid) => {
-        return (
-          info?.thumbSrc ||
-          info?.picture ||
-          info?.profilePicture ||
-          `https://graph.facebook.com/${uid}/picture?width=512&height=512`
-        );
-      };
+      if (!avatar1 || !avatar2) {
+        return message.reply(getLang("avatarError"));
+      }
 
-      const picture1 = getPictureURL(info1, id1);
-      const picture2 = getPictureURL(info2, id2);
-
-      // Download images
+      // Download profile pictures
       const downloadImage = async (url) => {
+
         const response = await axios.get(url, {
           responseType: "arraybuffer",
-          timeout: 15000,
+          timeout: 20000,
           maxRedirects: 5,
           headers: {
             "User-Agent": "Mozilla/5.0"
@@ -155,182 +183,134 @@ module.exports = {
       };
 
       const [buffer1, buffer2] = await Promise.all([
-        downloadImage(picture1),
-        downloadImage(picture2)
+        downloadImage(avatar1),
+        downloadImage(avatar2)
       ]);
 
+      // Load images
       const [img1, img2] = await Promise.all([
         loadImage(buffer1),
         loadImage(buffer2)
       ]);
 
       // Canvas setup
-      const W = 1000;
-      const H = 560;
+      const W = 800;
+      const H = 400;
 
       const canvas = createCanvas(W, H);
       const ctx = canvas.getContext("2d");
 
-      // Rounded rectangle helper
-      const roundRect = (x, y, w, h, r) => {
-        ctx.beginPath();
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + w - r, y);
-        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-        ctx.lineTo(x + w, y + h - r);
-        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-        ctx.lineTo(x + r, y + h);
-        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-        ctx.lineTo(x, y + r);
-        ctx.quadraticCurveTo(x, y, x + r, y);
-        ctx.closePath();
-      };
+      // Background gradient
+      const grad = ctx.createLinearGradient(0, 0, W, H);
 
-      // Image cover helper
-      const drawCover = (img, x, y, size) => {
-        const scale = Math.max(
-          size / img.width,
-          size / img.height
+      grad.addColorStop(0, "#ff6b6b");
+      grad.addColorStop(0.5, "#ee0979");
+      grad.addColorStop(1, "#ff6b6b");
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Decorative hearts
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "30px sans-serif";
+
+      for (let i = 0; i < 15; i++) {
+        ctx.fillText(
+          "♥",
+          Math.random() * W,
+          Math.random() * H
+        );
+      }
+
+      ctx.globalAlpha = 1;
+
+      // Draw circular avatar
+      const r = 125;
+      const avatarSize = r * 2;
+      const avatarY = 65;
+
+      const drawAvatar = (img, x) => {
+
+        ctx.save();
+
+        ctx.beginPath();
+        ctx.arc(
+          x + r,
+          avatarY + r,
+          r,
+          0,
+          Math.PI * 2
         );
 
-        const sw = size / scale;
-        const sh = size / scale;
+        ctx.closePath();
+        ctx.clip();
+
+        // Center crop
+        const scale = Math.max(
+          avatarSize / img.width,
+          avatarSize / img.height
+        );
+
+        const sw = avatarSize / scale;
+        const sh = avatarSize / scale;
 
         const sx = (img.width - sw) / 2;
         const sy = (img.height - sh) / 2;
 
         ctx.drawImage(
           img,
-          sx, sy, sw, sh,
-          x, y, size, size
+          sx,
+          sy,
+          sw,
+          sh,
+          x,
+          avatarY,
+          avatarSize,
+          avatarSize
         );
-      };
-
-      // Background gradient
-      const bg = ctx.createLinearGradient(0, 0, W, H);
-      bg.addColorStop(0, "#160A2E");
-      bg.addColorStop(0.5, "#7B164F");
-      bg.addColorStop(1, "#F43F78");
-
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, W, H);
-
-      // Background decoration
-      ctx.globalAlpha = 0.10;
-      ctx.fillStyle = "#FFFFFF";
-
-      for (let i = 0; i < 35; i++) {
-        ctx.beginPath();
-        ctx.arc(
-          Math.random() * W,
-          Math.random() * H,
-          Math.random() * 5 + 2,
-          0,
-          Math.PI * 2
-        );
-        ctx.fill();
-      }
-
-      ctx.globalAlpha = 1;
-
-      // Main glass card
-      roundRect(35, 30, 930, 500, 35);
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      ctx.fill();
-
-      ctx.strokeStyle = "rgba(255,255,255,0.35)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Heading
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "bold 38px sans-serif";
-      ctx.fillText("TODAY'S PERFECT COUPLE", W / 2, 100);
-
-      ctx.font = "20px sans-serif";
-      ctx.fillStyle = "#FFD6E5";
-      ctx.fillText("TWO HEARTS • ONE STORY", W / 2, 137);
-
-      // Profile pictures
-      const avatarSize = 210;
-      const avatarY = 175;
-      const leftX = 125;
-      const rightX = 665;
-
-      // Left avatar
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(
-        leftX + avatarSize / 2,
-        avatarY + avatarSize / 2,
-        avatarSize / 2,
-        0,
-        Math.PI * 2
-      );
-      ctx.clip();
-
-      drawCover(img1, leftX, avatarY, avatarSize);
-      ctx.restore();
-
-      // Right avatar
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(
-        rightX + avatarSize / 2,
-        avatarY + avatarSize / 2,
-        avatarSize / 2,
-        0,
-        Math.PI * 2
-      );
-      ctx.clip();
-
-      drawCover(img2, rightX, avatarY, avatarSize);
-      ctx.restore();
-
-      // Avatar borders
-      ctx.strokeStyle = "#FFFFFF";
-      ctx.lineWidth = 7;
-
-      [leftX, rightX].forEach(x => {
-        ctx.beginPath();
-        ctx.arc(
-          x + avatarSize / 2,
-          avatarY + avatarSize / 2,
-          avatarSize / 2 + 3,
-          0,
-          Math.PI * 2
-        );
-        ctx.stroke();
-      });
-
-      // Heart drawing
-      const drawHeart = (x, y, size) => {
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.scale(size / 100, size / 100);
-
-        ctx.beginPath();
-        ctx.moveTo(0, 85);
-        ctx.bezierCurveTo(-110, 10, -65, -50, 0, -15);
-        ctx.bezierCurveTo(65, -50, 110, 10, 0, 85);
-        ctx.closePath();
-
-        ctx.fillStyle = "#FF1744";
-        ctx.shadowColor = "#FF1744";
-        ctx.shadowBlur = 20;
-        ctx.fill();
 
         ctx.restore();
+
+        // Avatar border
+        ctx.beginPath();
+
+        ctx.arc(
+          x + r,
+          avatarY + r,
+          r,
+          0,
+          Math.PI * 2
+        );
+
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 6;
+        ctx.stroke();
       };
 
-      drawHeart(W / 2, 275, 90);
+      // First avatar
+      drawAvatar(img1, 35);
+
+      // Second avatar
+      drawAvatar(img2, W - avatarSize - 35);
+
+      // Center heart
+      ctx.font = "bold 55px sans-serif";
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+
+      ctx.fillText(
+        "❤️",
+        W / 2,
+        190
+      );
 
       // User names
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "bold 25px sans-serif";
+      ctx.font = "bold 21px sans-serif";
+      ctx.fillStyle = "#ffffff";
 
       const fitText = (text, maxWidth) => {
+
         let value = String(text);
 
         while (
@@ -340,43 +320,58 @@ module.exports = {
           value = value.slice(0, -1);
         }
 
-        if (value !== text) value += "...";
+        if (value !== text) {
+          value += "...";
+        }
 
         return value;
       };
 
       ctx.fillText(
-        fitText(name1, 350),
-        leftX + avatarSize / 2,
-        420
+        fitText(name1, 280),
+        160,
+        340
       );
 
       ctx.fillText(
-        fitText(name2, 350),
-        rightX + avatarSize / 2,
-        420
+        fitText(name2, 280),
+        W - 160,
+        340
       );
 
-      // Compatibility heading
-      ctx.font = "bold 23px sans-serif";
-      ctx.fillStyle = "#FFE1EC";
+      // Compatibility text
+      ctx.font = "bold 20px sans-serif";
+      ctx.fillStyle = "#ffffff";
+
       ctx.fillText(
         compatibility + "% COMPATIBILITY",
         W / 2,
-        462
+        260
       );
 
-      // Compatibility progress bar
-      const barW = 480;
-      const barH = 18;
-      const barX = (W - barW) / 2;
-      const barY = 480;
+      // Compatibility bar
+      const barW = 250;
+      const barH = 16;
 
-      roundRect(barX, barY, barW, barH, 10);
-      ctx.fillStyle = "rgba(255,255,255,0.25)";
+      const barX = (W - barW) / 2;
+      const barY = 275;
+
+      ctx.beginPath();
+
+      ctx.roundRect(
+        barX,
+        barY,
+        barW,
+        barH,
+        10
+      );
+
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
       ctx.fill();
 
-      roundRect(
+      ctx.beginPath();
+
+      ctx.roundRect(
         barX,
         barY,
         barW * compatibility / 100,
@@ -385,40 +380,39 @@ module.exports = {
       );
 
       const barGradient = ctx.createLinearGradient(
-        barX, 0, barX + barW, 0
+        barX,
+        0,
+        barX + barW,
+        0
       );
 
-      barGradient.addColorStop(0, "#FF8FAB");
-      barGradient.addColorStop(1, "#FFFFFF");
+      barGradient.addColorStop(0, "#ffb6c1");
+      barGradient.addColorStop(1, "#ffffff");
 
       ctx.fillStyle = barGradient;
       ctx.fill();
 
       // Footer
-      ctx.font = "16px sans-serif";
-      ctx.fillStyle = "#FFE1EC";
+      ctx.font = "15px sans-serif";
+      ctx.fillStyle = "#ffffff";
+
       ctx.fillText(
         "MADE WITH LOVE ❤️",
         W / 2,
-        520
+        375
       );
 
       // Save image
-      const cacheDir = path.join(__dirname, "cache");
-
-      await fs.ensureDir(cacheDir);
-
-      const uniqueID = `${Date.now()}_${Math.random()
-        .toString(36).slice(2, 9)}`;
-
       outputPath = path.join(
         cacheDir,
-        `pair_${uniqueID}.jpg`
+        `pair_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`
       );
 
-      fs.writeFileSync(
+      await fs.writeFile(
         outputPath,
-        canvas.toBuffer("image/jpeg", { quality: 0.92 })
+        canvas.toBuffer("image/jpeg", {
+          quality: 0.92
+        })
       );
 
       // Result message
@@ -429,30 +423,33 @@ module.exports = {
         compatibility
       );
 
+      // Send result
       await message.reply({
         body,
         attachment: fs.createReadStream(outputPath)
       });
 
     } catch (err) {
+
       console.error("[PAIR ERROR]", err);
 
-      try {
-        await message.reply(getLang("error"));
-      } catch (e) {
-        console.error("[PAIR REPLY ERROR]", e);
-      }
+      return message.reply(getLang("error"));
 
     } finally {
-      // Clean temporary output
-      if (outputPath) {
-        try {
-          if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath);
-          }
-        } catch (e) {
-          console.error("[PAIR CLEANUP ERROR]", e);
+
+      // Remove temporary image
+      try {
+
+        if (outputPath && await fs.pathExists(outputPath)) {
+          await fs.remove(outputPath);
         }
+
+      } catch (cleanupError) {
+
+        console.error(
+          "[PAIR CLEANUP ERROR]",
+          cleanupError
+        );
       }
     }
   }
