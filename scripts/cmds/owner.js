@@ -5,7 +5,7 @@ const path = require("path");
 module.exports = {
   config: {
     name: "owner",
-    version: "2.2.0",
+    version: "2.3.0",
     author: "Nahid Hasan",
     role: 0,
     shortDescription: "Owner Information",
@@ -34,14 +34,13 @@ module.exports = {
 
     const imgPath = path.join(
       __dirname,
-      "image",
       "WhatsApp Image 2026-11-20 at 1.21.44 AM.jpg"
     );
 
     try {
-      if (!fs.existsSync(imgPath)) {
+      if (!await fs.pathExists(imgPath)) {
         return api.sendMessage(
-          "❌ Owner image not found! Check the image folder and file name.",
+          "❌ Owner image not found!\nCheck image location and filename.",
           event.threadID,
           null,
           event.messageID
