@@ -1,39 +1,42 @@
 
-const fs = require("fs-extra");
 const axios = require("axios");
+const fs = require("fs-extra");
 const path = require("path");
 const { loadImage, createCanvas } = require("canvas");
 
 module.exports = {
   config: {
     name: "kiss",
-    version: "2.0.0",
-    author: "Nahid",
+    version: "2.1",
+    author: "Nahid Hasan",
     countDown: 5,
     role: 0,
-    description: {
-      en: "Create a kiss card with a mentioned member"
-    },
+    description: "Generate a kiss card",
     category: "love",
     guide: {
-      en: "{pn} @mention"
+      en: "{pn} @mention",
+      bn: "{pn} @mention"
     }
   },
 
   onStart: async function ({ message, event, api, usersData }) {
-    let imgPath;
-    let avatar1Path;
-    let avatar2Path;
+    let files = [];
 
     try {
       const mentions = Object.keys(event.mentions || {});
 
-      if (mentions.length === 0) {
-        return message.reply("💋 Please mention someone to kiss!");
+      if (!mentions.length) {
+        return message.reply("💋 যাকে Kiss করতে চাও তাকে Mention করো!");
       }
 
       const senderID = event.senderID;
       const targetID = mentions[0];
+
+      if (senderID === targetID) {
+        return message.reply("😅 নিজেকে Kiss করা যাবে না!");
+      }
+
+      await message.reply("💋 NAHID Kiss Card তৈরি হচ্ছে...");
 
       const [user1, user2] = await Promise.all([
         usersData.get(senderID),
@@ -46,22 +49,37 @@ module.exports = {
       const cacheDir = path.join(__dirname, "cache");
       await fs.ensureDir(cacheDir);
 
-      const ts = Date.now();
+      const timestamp = Date.now();
 
-      imgPath = path.join(cacheDir, `nahid_kiss_${ts}.jpg`);
-      avatar1Path = path.join(cacheDir, `nahid_avt1_${ts}.jpg`);
-      avatar2Path = path.join(cacheDir, `nahid_avt2_${ts}.jpg`);
+      const avatar1Path = path.join(cacheDir, `kiss_avt1_${timestamp}.jpg`);
+      const avatar2Path = path.join(cacheDir, `kiss_avt2_${timestamp}.jpg`);
+      const outputPath = path.join(cacheDir, `kiss_card_${timestamp}.jpg`);
 
+      files = [avatar1Path, avatar2Path, outputPath];
+
+      // Get profile pictures using bot API
       const getAvatar = async (uid, savePath) => {
-        const response = await axios.get(
-          `https://graph.facebook.com/${uid}/picture?height=720&width=720`,
-          {
-            responseType: "arraybuffer",
-            timeout: 20000
-          }
-        );
+        const info = await new Promise((resolve, reject) => {
+          api.getUserInfo(uid, (err, result) => {
+            if (err) return reject(err);
+            resolve(result);
+          });
+        });
+
+        const profile = info?.[uid];
+        const avatarURL = profile?.thumbSrc || profile?.profileUrl;
+
+        if (!avatarURL) {
+          throw new Error("Profile picture URL not found for " + uid);
+        }
+
+        const response = await axios.get(avatarURL, {
+          responseType: "arraybuffer",
+          timeout: 20000
+        });
 
         await fs.writeFile(savePath, Buffer.from(response.data));
+
         return loadImage(savePath);
       };
 
@@ -70,28 +88,29 @@ module.exports = {
         getAvatar(targetID, avatar2Path)
       ]);
 
+      // Canvas
       const W = 1000;
       const H = 550;
 
       const canvas = createCanvas(W, H);
       const ctx = canvas.getContext("2d");
 
-      // Background
-      const bg = ctx.createLinearGradient(0, 0, W, H);
-      bg.addColorStop(0, "#ff9aaf");
-      bg.addColorStop(0.5, "#ff4f91");
-      bg.addColorStop(1, "#a83279");
+      // Background gradient
+      const gradient = ctx.createLinearGradient(0, 0, W, H);
+      gradient.addColorStop(0, "#ff9aaf");
+      gradient.addColorStop(0.5, "#ee0979");
+      gradient.addColorStop(1, "#a83279");
 
-      ctx.fillStyle = bg;
+      ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, W, H);
 
       // Decorative hearts
-      ctx.font = "40px sans-serif";
       ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.font = "42px sans-serif";
 
       [
-        [100, 100], [880, 90], [500, 100],
-        [130, 460], [870, 450], [500, 490]
+        [80, 100], [900, 100], [480, 130],
+        [100, 480], [900, 470], [500, 500]
       ].forEach(([x, y]) => {
         ctx.fillText("♥", x, y);
       });
@@ -102,31 +121,30 @@ module.exports = {
       ctx.font = "bold 48px sans-serif";
       ctx.fillText("NAHID KISS", W / 2, 65);
 
-      // Avatar positions
-      const r = 155;
       const cy = 275;
-      const x1 = 250;
-      const x2 = 750;
+      const radius = 150;
 
+      // Draw circular avatar
       function drawAvatar(img, x) {
         ctx.save();
 
-        ctx.shadowColor = "#8b174e";
-        ctx.shadowBlur = 25;
+        ctx.shadowColor = "#660033";
+        ctx.shadowBlur = 20;
 
         ctx.beginPath();
-        ctx.arc(x, cy, r + 8, 0, Math.PI * 2);
+        ctx.arc(x, cy, radius + 8, 0, Math.PI * 2);
         ctx.fillStyle = "#ffffff";
         ctx.fill();
 
         ctx.shadowBlur = 0;
+
         ctx.beginPath();
-        ctx.arc(x, cy, r, 0, Math.PI * 2);
+        ctx.arc(x, cy, radius, 0, Math.PI * 2);
         ctx.clip();
 
         const scale = Math.max(
-          (r * 2) / img.width,
-          (r * 2) / img.height
+          radius * 2 / img.width,
+          radius * 2 / img.height
         );
 
         const width = img.width * scale;
@@ -143,51 +161,52 @@ module.exports = {
         ctx.restore();
       }
 
-      drawAvatar(img1, x1);
-      drawAvatar(img2, x2);
+      drawAvatar(img1, 250);
+      drawAvatar(img2, 750);
 
-      // Kiss emoji
-      ctx.textAlign = "center";
+      // Center kiss emoji
       ctx.font = "100px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ffffff";
       ctx.fillText("💋", W / 2, cy + 35);
 
       // Names
       ctx.font = "bold 28px sans-serif";
       ctx.fillStyle = "#ffffff";
 
-      ctx.fillText(name1.slice(0, 20), x1, 475);
-      ctx.fillText(name2.slice(0, 20), x2, 475);
+      ctx.fillText(name1.slice(0, 22), 250, 470);
+      ctx.fillText(name2.slice(0, 22), 750, 470);
 
       // Footer
       ctx.font = "bold 22px sans-serif";
       ctx.fillStyle = "#ffe4f0";
       ctx.fillText("MADE WITH LOVE ♥", W / 2, 525);
 
+      // Save image
       await fs.writeFile(
-        imgPath,
+        outputPath,
         canvas.toBuffer("image/jpeg", { quality: 0.92 })
       );
 
+      // Send image
       await message.reply({
-        body: `💋 ${name1} kissed ${name2}!\n\n💕 NAHID KISS CARD`,
-        attachment: fs.createReadStream(imgPath)
+        body: `💋 ${name1} Kissed ${name2}!\n💕 NAHID KISS`,
+        attachment: fs.createReadStream(outputPath)
       });
 
     } catch (err) {
-      console.error("[NAHID KISS ERROR]", err);
+      console.error("NAHID KISS ERROR:", err);
 
-      message.reply(
-        "❌ Kiss Card তৈরি করা যায়নি!\n" +
-        "Error: " + (err.message || "Unknown error")
+      await message.reply(
+        "🥹 Kiss Card তৈরি করা যায়নি!\nError: " +
+        (err.message || "Unknown error")
       );
 
     } finally {
-      for (const file of [imgPath, avatar1Path, avatar2Path]) {
-        if (file) {
-          try {
-            await fs.remove(file);
-          } catch (e) {}
-        }
+      for (const file of files) {
+        try {
+          await fs.remove(file);
+        } catch (err) {}
       }
     }
   }
