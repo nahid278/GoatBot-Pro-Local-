@@ -5,13 +5,13 @@ if (!global.client.busyList)
 if (!global.client.nahidPending)
   global.client.nahidPending = {};
 
-const NAHID_NAME = "test";
+const NAHID_NAME = "nahid";
 const WAIT_TIME = 10 * 1000;
 
 module.exports = {
   config: {
     name: "busy",
-    version: "2.1",
+    version: "2.2",
     author: "Nahid Hasan",
     countDown: 5,
     role: 0,
@@ -34,8 +34,7 @@ module.exports = {
       turnedOnWithReason: "✅ | Busy mode has been turned on. Reason: %1",
       alreadyOn: "⚠️ | %1 is currently busy.",
       alreadyOnWithReason: "⚠️ | %1 is currently busy. Reason: %2",
-      nahidBusy:
-        "🔕 | Test এখন Busy! ১০ সেকেন্ড অপেক্ষা করার পরও কোনো উত্তর পাওয়া যায়নি।"
+      nahidBusy: "🔕 | Nahid এখন Busy! ১০ সেকেন্ড অপেক্ষা করেও কোনো উত্তর পাওয়া যায়নি।"
     }
   },
 
@@ -70,15 +69,10 @@ module.exports = {
   }) {
     const { senderID, threadID, body, mentions } = event;
 
-    // Sender name detect
+    // Find sender name from bot database
     async function getSenderName(uid) {
       try {
         if (event.senderName) return event.senderName;
-
-        if (usersData && typeof usersData.getName === "function") {
-          const name = await usersData.getName(uid);
-          if (name) return name;
-        }
 
         const user = global.db?.allUserData?.find(
           item => String(item.userID) === String(uid)
@@ -86,33 +80,43 @@ module.exports = {
 
         if (user?.name) return user.name;
         if (user?.data?.name) return user.data.name;
-      } catch (e) {}
+
+        if (usersData && typeof usersData.getName === "function") {
+          const name = await usersData.getName(uid);
+          if (name) return name;
+        }
+      } catch (error) {
+        console.error("[BUSY] Name detection error:", error);
+      }
 
       return "";
     }
 
     const senderName = await getSenderName(senderID);
-    const isTestUser = senderName.toLowerCase().includes(NAHID_NAME);
 
-    // Test user replies within 10 seconds -> cancel timer
-    if (isTestUser) {
+    // Check if Nahid replied
+    const isNahid = senderName.toLowerCase().includes(NAHID_NAME);
+
+    if (isNahid) {
       const pending = global.client.nahidPending[threadID];
 
       if (pending) {
         clearTimeout(pending.timer);
         delete global.client.nahidPending[threadID];
 
-        console.log("[BUSY] Test replied. Timer cancelled.");
+        console.log("[BUSY] Nahid replied. Timer cancelled.");
       }
 
       return;
     }
 
-    // Detect test name in message
+    // Detect Nahid name in message
     const messageText = String(body || "");
 
-    if (new RegExp(`\\b${NAHID_NAME}\\b`, "i").test(messageText)) {
+    if (/\bnahid\b/i.test(messageText)) {
       if (!global.client.nahidPending[threadID]) {
+        console.log("[BUSY] Nahid mentioned. Timer started.");
+
         const timer = setTimeout(async () => {
           try {
             await api.sendMessage(
@@ -120,7 +124,7 @@ module.exports = {
               threadID
             );
           } catch (error) {
-            console.error("[BUSY] Message sending error:", error);
+            console.error("[BUSY] Send error:", error);
           }
 
           delete global.client.nahidPending[threadID];
@@ -131,7 +135,9 @@ module.exports = {
           startedAt: Date.now()
         };
 
-        console.log("[BUSY] Test mentioned. 10 second timer started.");
+        if (typeof timer.unref === "function") {
+          timer.unref();
+        }
       }
     }
 
