@@ -2,18 +2,19 @@
 if (!global.client.nahidPending)
   global.client.nahidPending = {};
 
+const TARGET_UID = "100012345678901"; // Demo Facebook UID
 const TARGET_NAME = "rahim";
 const WAIT_TIME = 10 * 1000;
 
 module.exports = {
   config: {
     name: "busy",
-    version: "3.1",
+    version: "4.0",
     author: "Nahid Hasan",
     countDown: 3,
     role: 0,
     description: {
-      en: "Automatic busy detection test"
+      en: "Automatic busy detection"
     },
     category: "box chat",
     guide: {
@@ -23,7 +24,9 @@ module.exports = {
 
   onStart: async function ({ message }) {
     return message.reply(
-      "✅ Busy test system is running!\nTarget: rahim\nWait: 10 seconds"
+      "✅ Busy test started!\nTarget: rahim\nUID: " +
+      TARGET_UID +
+      "\nWait: 10 seconds"
     );
   },
 
@@ -31,27 +34,19 @@ module.exports = {
     const { senderID, threadID, body } = event;
 
     console.log("========== BUSY TEST ==========");
-    console.log("Sender ID:", senderID);
-    console.log("Sender Name:", event.senderName);
+    console.log("Sender UID:", senderID);
     console.log("Message:", body);
     console.log("===============================");
 
-    const senderName = String(
-      event.senderName ||
-      event.sender?.name ||
-      event.userName ||
-      ""
-    ).toLowerCase();
-
-    // Target person replied: cancel timer
-    if (senderName.includes(TARGET_NAME)) {
+    // Target user replied
+    if (String(senderID) === TARGET_UID) {
       const pending = global.client.nahidPending[threadID];
 
       if (pending) {
         clearTimeout(pending);
         delete global.client.nahidPending[threadID];
 
-        console.log("[BUSY TEST] Rahim replied. Timer cancelled.");
+        console.log("[BUSY] Rahim replied. Timer cancelled.");
       }
 
       return;
@@ -63,7 +58,7 @@ module.exports = {
     if (regex.test(String(body || ""))) {
       if (global.client.nahidPending[threadID]) return;
 
-      console.log("[BUSY TEST] Rahim mentioned. Timer started.");
+      console.log("[BUSY] Rahim mentioned. Timer started.");
 
       const timer = setTimeout(async () => {
         try {
@@ -72,7 +67,7 @@ module.exports = {
             threadID
           );
         } catch (error) {
-          console.log("[BUSY TEST ERROR]", error);
+          console.log("[BUSY ERROR]", error);
         }
 
         delete global.client.nahidPending[threadID];
