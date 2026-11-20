@@ -1,452 +1,252 @@
-const axios = require("axios");
 
-const API = axios.create({
-  baseURL: "https://eryxenx.agi.bd/api/simsimi",
-  timeout: 20000
-});
+const fs = require("fs-extra");
+const path = require("path");
+const { createCanvas } = require("canvas");
 
-const triggerLocks = new Set();
-
-function errMsg(e) {
-  const d = e && e.response && e.response.data;
-  return (d && (d.message || d.error || d.detail)) || (e && e.message) || "Unknown error";
-}
-
-async function sendTypingIndicatorV2(api, sendTyping, threadID) {
-  try {
-    if (typeof api.sendTypingIndicator === "function") {
-      await api.sendTypingIndicator(threadID, sendTyping);
+module.exports = {
+  config: {
+    name: "babys",
+    version: "2.0.0",
+    author: "Nahid Hasan",
+    countDown: 5,
+    role: 0,
+    shortDescription: "Couple Baby Prediction",
+    category: "love",
+    guide: {
+      en: "{p}babys [rivan/neela/ayat/sami]"
     }
-  } catch (err) {
-    console.log("⚠️ Typing indicator error:", err.message);
-  }
-}
+  },
 
-let botUID = null;
-function getBotUID(api) {
-  if (botUID) return botUID;
-  try {
-    if (typeof api.getCurrentUserID === "function") {
-      botUID = api.getCurrentUserID();
-    }
-  } catch {}
-  return botUID;
-}
+  onStart: async function ({ api, event, args }) {
+    const { threadID, messageID } = event;
 
-module.exports.config = {
-  name: "baby",
-  version: "8.0.1",
-  role: 0,
-  author: "EryXenX",
-  countTime: 0,
-  category: "chat",
-  shortDescription: "AI auto teach chat (Simsimi-style)",
-  longDescription: "AI auto teach with Teach & List support + Typing effect",
-  guide: "{pn} [query]\n{pn} list\n{pn} teach [Question] - [Reply]\n{pn} react [Question] - [Emoji]\n{pn} edit [Question] - [OldReply] - [NewReply]\n{pn} remove/rm [Question] - [Reply]\n{pn} del (reply to bot's wrong answer)\n{pn} msg [trigger]\n{pn} msg [trigger] -20 (custom show limit)",
-  envConfig: {}
-};
+    const input = (args[0] || "").toLowerCase();
 
-async function getUserName(api, uid, usersData) {
-  try {
-    if (usersData && typeof usersData.getName === "function") {
-      const name = await usersData.getName(uid);
-      if (name) return name;
-    }
-    const info = await api.getUserInfo(uid);
-    return (info && info[uid] && info[uid].name) || "User";
-  } catch {
-    return "User";
-  }
-}
+    const couples = {
+      rivan: {
+        name1: "RIVAN",
+        name2: "NEELA",
+        babies: 2,
+        theme1: "#ff5caa",
+        theme2: "#ffb6d9"
+      },
+      neela: {
+        name1: "RIVAN",
+        name2: "NEELA",
+        babies: 2,
+        theme1: "#ff5caa",
+        theme2: "#ffb6d9"
+      },
+      ayat: {
+        name1: "AYAT",
+        name2: "SAMI",
+        babies: 3,
+        theme1: "#a855f7",
+        theme2: "#e9a8ff"
+      },
+      sami: {
+        name1: "AYAT",
+        name2: "SAMI",
+        babies: 3,
+        theme1: "#a855f7",
+        theme2: "#e9a8ff"
+      }
+    };
 
-module.exports.onStart = async function ({ api, event, args, usersData }) {
-  const uid = event.senderID;
-  const senderName = await getUserName(api, uid, usersData);
-  const query = args.join(" ").toLowerCase();
+    const couple = couples[input];
 
-  try {
-    if (args[0] === "autoteach") {
-      const res = await API.get("/autoteach/stats");
-      const { today = 0, total = 0 } = res.data || {};
+    if (!couple) {
       return api.sendMessage(
-        `╭─╼🌟 𝗔𝘂𝘁𝗼𝘁𝗲𝗮𝗰𝗵 𝗦𝘁𝗮𝘁𝘂𝘀\n├ 🟢 𝗦𝘁𝗮𝘁𝘂𝘀: 𝗔𝗹𝘄𝗮𝘆𝘀 𝗢𝗡\n├ 📅 𝗧𝗼𝗱𝗮𝘆: ${today}\n╰─╼📊 𝗧𝗼𝘁𝗮𝗹: ${total}`,
-        event.threadID,
-        event.messageID
+        "💗 BABY PREDICTION COMMAND 💗\n\n" +
+        "❤️ babys rivan\n" +
+        "❤️ babys neela\n" +
+        "💕 babys ayat\n" +
+        "💕 babys sami\n\n" +
+        "যেকোনো একজনের নাম দিয়ে কমান্ড করো! 🥰",
+        threadID,
+        messageID
       );
     }
 
-    if (args[0] === "list") {
-      const res = await API.get("/list");
-      return api.sendMessage(
-        `╭─╼🌟 𝗕𝗮𝗯𝘆 𝗔𝗜 𝗦𝘁𝗮𝘁𝘂𝘀\n├ 📝 𝗧𝗲𝗮𝗰𝗵𝗲𝗱 𝗤𝘂𝗲𝘀𝘁𝗶𝗼𝗻𝘀: ${res.data.totalQuestions}\n├ 📦 𝗦𝘁𝗼𝗿𝗲𝗱 𝗥𝗲𝗽𝗹𝗶𝗲𝘀: ${res.data.totalReplies}\n╰─╼👤 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿: 𝗘𝗿𝘆𝗫𝗲𝗻𝗫`,
-        event.threadID,
-        event.messageID
+    const quotes = [
+      "Two hearts, one beautiful family! ❤️",
+      "Their love will create a little world of happiness! 💕",
+      "Together forever, creating endless memories! 🥰",
+      "A beautiful family begins with true love! 💗",
+      "Their little angels will complete their world! 👶",
+      "Love grows stronger with every little smile! ❤️"
+    ];
+
+    const random = arr => arr[Math.floor(Math.random() * arr.length)];
+
+    const love = Math.floor(Math.random() * 21) + 80;
+
+    const genders = Array.from(
+      { length: couple.babies },
+      () => random(["BOY", "GIRL"])
+    );
+
+    const outputDir = path.join(__dirname, "cache");
+    await fs.ensureDir(outputDir);
+
+    const canvas = createCanvas(1000, 1050);
+    const ctx = canvas.getContext("2d");
+
+    // Background
+    const bg = ctx.createLinearGradient(0, 0, 1000, 1050);
+    bg.addColorStop(0, "#180d30");
+    bg.addColorStop(0.5, "#38204e");
+    bg.addColorStop(1, "#170b29");
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 1000, 1050);
+
+    // Decorative hearts
+    for (let i = 0; i < 40; i++) {
+      ctx.globalAlpha = 0.15 + Math.random() * 0.2;
+      ctx.fillStyle = couple.theme1;
+      ctx.font = `${20 + Math.random() * 25}px Arial`;
+      ctx.fillText(
+        "♥",
+        Math.random() * 950,
+        Math.random() * 1000
       );
     }
 
-    if (args[0] === "msg") {
-      let trigger = args.slice(1).join(" ").trim();
-      if (!trigger) return api.sendMessage("❌ | Use: !baby msg [trigger]\nOr: !baby msg [trigger] -20 (custom limit)", event.threadID, event.messageID);
+    ctx.globalAlpha = 1;
 
-      let customLimit = null;
-      const limitMatch = trigger.match(/\s*-(\d+)\s*$/);
-      if (limitMatch) {
-        customLimit = parseInt(limitMatch[1], 10);
-        trigger = trigger.replace(/\s*-(\d+)\s*$/, "").trim();
-        if (!trigger) return api.sendMessage("❌ | Use: !baby msg [trigger] -20", event.threadID, event.messageID);
-      }
+    // Header
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 58px Arial";
+    ctx.fillText("BABY PREDICTION", 500, 115);
 
-      const res = await API.get("/simsimi-list", { params: { ask: trigger } });
-      if (!res.data.replies || res.data.replies.length === 0)
-        return api.sendMessage("❌ No replies found.", event.threadID, event.messageID);
+    ctx.fillStyle = couple.theme2;
+    ctx.font = "25px Arial";
+    ctx.fillText("A BEAUTIFUL LOVE STORY", 500, 165);
 
-      const REPLY_LIMIT = (customLimit && customLimit > 0) ? customLimit : 150;
-      const allReplies = res.data.replies;
-      const shownReplies = allReplies.slice(0, REPLY_LIMIT);
-      const remaining = allReplies.length - shownReplies.length;
+    // Main Card
+    const cardGradient = ctx.createLinearGradient(70, 210, 930, 850);
+    cardGradient.addColorStop(0, "#fff0f7");
+    cardGradient.addColorStop(1, "#f3ddff");
 
-      const formatted = shownReplies.map((rep, i) => `➤ ${i + 1}. ${rep}`).join("\n");
-      const limitNote = remaining > 0
-        ? `\n⚠️ ${REPLY_LIMIT} 𝘁𝗮 𝗿𝗲𝗽𝗹𝘆 𝗱𝗲𝗸𝗵𝗮𝗻𝗼 𝗵𝗼𝘆𝗲𝗰𝗵𝗲, 𝗮𝗿𝗼 ${remaining} 𝘁𝗮 𝗯𝗮𝗸𝗶 𝗮𝗰𝗵𝗲 (𝗱𝗲𝗸𝗵𝗮𝗻𝗼 𝗷𝗮𝗰𝗰𝗵𝗲 𝗻𝗮, 𝘁𝗮𝗯𝗲 𝗸𝗶𝗽 𝘀𝗵𝘂𝗯𝗵 𝗿𝗲𝗽𝗹𝗶𝗿 𝘂𝗽𝗼𝗿 𝗸𝗮𝗷 𝗸𝗼𝗿𝗯𝗲)।\n`
-        : "";
-      const msg = `📌 𝗧𝗿𝗶𝗴𝗴𝗲𝗿: ${trigger.toUpperCase()}\n📋 𝗧𝗼𝘁𝗮𝗹: ${res.data.total}\n━━━━━━━━━━━━━━\n${formatted}\n━━━━━━━━━━━━━━${limitNote}✏️ Reply with the numbers you want to KEEP (e.g. "2, 7") — everything else will be removed.`;
+    ctx.fillStyle = cardGradient;
+    ctx.beginPath();
+    ctx.roundRect(65, 210, 870, 640, 35);
+    ctx.fill();
 
-      return api.sendMessage(msg, event.threadID, (err, info) => {
-        if (!err) {
-          global.GoatBot.onReply.set(info.messageID, {
-            commandName: module.exports.config.name,
-            messageID: info.messageID,
-            author: event.senderID,
-            type: "msgSelect",
-            trigger
-          });
-        }
-      }, event.messageID);
-    }
+    // Couple Names
+    ctx.fillStyle = "#762b68";
+    ctx.font = "bold 54px Arial";
+    ctx.fillText(
+      `${couple.name1}  ♥  ${couple.name2}`,
+      500,
+      320
+    );
 
-    if (args[0] === "teach") {
-      const parts = query.replace("teach ", "").split(" - ");
-      if (parts.length < 2)
-        return api.sendMessage("❌ | Use: teach [Question] - [Reply]", event.threadID, event.messageID);
+    // Love Percentage
+    ctx.fillStyle = "#e84393";
+    ctx.font = "bold 75px Arial";
+    ctx.fillText(`${love}%`, 500, 445);
 
-      const [ask, ans] = parts;
-      const res = await API.get("/teach", { params: { ask, ans, senderID: uid, senderName } });
-      return api.sendMessage(`✅ ${res.data.message}`, event.threadID, event.messageID);
-    }
+    ctx.fillStyle = "#9b467e";
+    ctx.font = "bold 25px Arial";
+    ctx.fillText("LOVE COMPATIBILITY", 500, 490);
 
-    if (args[0] === "react") {
-      const rawQuery = args.slice(1).join(" ");
-      const parts = rawQuery.split(" - ");
-      if (parts.length < 2)
-        return api.sendMessage("❌ | Use: react [Question] - [Emoji]", event.threadID, event.messageID);
+    // Love Bar
+    ctx.fillStyle = "#e9bfdc";
+    ctx.beginPath();
+    ctx.roundRect(190, 520, 620, 24, 12);
+    ctx.fill();
 
-      const [ask, emoji] = parts;
-      if (!ask.trim() || !emoji.trim())
-        return api.sendMessage("❌ | Use: react [Question] - [Emoji]", event.threadID, event.messageID);
+    ctx.fillStyle = couple.theme1;
+    ctx.beginPath();
+    ctx.roundRect(190, 520, 620 * love / 100, 24, 12);
+    ctx.fill();
 
-      const res = await API.get("/teachReact", { params: { ask, emoji, senderName } });
-      return api.sendMessage(`✅ ${res.data.message}`, event.threadID, event.messageID);
-    }
+    // Baby Count
+    ctx.fillStyle = "#702b68";
+    ctx.font = "bold 42px Arial";
+    ctx.fillText(
+      `${couple.babies} FUTURE BABIES`,
+      500,
+      620
+    );
 
-    if (args[0] === "edit") {
-      const parts = query.replace("edit ", "").split(" - ");
-      if (parts.length < 3)
-        return api.sendMessage("❌ | Use: edit [Question] - [OldReply] - [NewReply]", event.threadID, event.messageID);
+    // Gender Prediction
+    ctx.fillStyle = "#8b3976";
+    ctx.font = "bold 27px Arial";
+    ctx.fillText("BABY GENDER PREDICTION", 500, 680);
 
-      const [ask, oldR, newR] = parts;
-      const res = await API.get("/edit", { params: { ask, old: oldR, new: newR } });
-      return api.sendMessage(res.data.message, event.threadID, event.messageID);
-    }
+    ctx.font = "bold 29px Arial";
 
-    if (["remove", "rm"].includes(args[0])) {
-      const parts = query.replace(/^(remove|rm)\s*/, "").split(" - ");
-      if (parts.length < 2)
-        return api.sendMessage("❌ | Use: remove [Question] - [Reply]", event.threadID, event.messageID);
+    genders.forEach((gender, index) => {
+      const label = gender === "BOY" ? "BOY" : "GIRL";
+      const symbol = gender === "BOY" ? "♂" : "♀";
 
-      const [ask, ans] = parts;
-      const res = await API.get("/delete", { params: { ask, ans } });
-      return api.sendMessage(res.data.message, event.threadID, event.messageID);
-    }
+      ctx.fillStyle = gender === "BOY" ? "#368be8" : "#e85caa";
 
-    if (args[0] === "del") {
-      return api.sendMessage(
-        "❌ | Reply to the bot's wrong answer message with \"!baby del\" to delete it.",
-        event.threadID,
-        event.messageID
+      const x = 500 + (index - (genders.length - 1) / 2) * 190;
+
+      ctx.fillText(
+        `${symbol} ${index + 1}. ${label}`,
+        x,
+        750
       );
-    }
-
-    if (!query) {
-      const texts = ["Hey baby 💖", "Yes, I'm here 😘"];
-      const reply = texts[Math.floor(Math.random() * texts.length)];
-      return api.sendMessage(reply, event.threadID);
-    }
-
-    return await deliverSimsimiResponse({ api, event, query, senderName });
-
-  } catch (e) {
-    console.error("❌ [baby/onStart] error:", e);
-    return api.sendMessage(`❌ Error: ${errMsg(e)}`, event.threadID, event.messageID);
-  }
-};
-
-module.exports.onReply = async function ({ api, event, Reply, usersData }) {
-  const senderName = await getUserName(api, event.senderID, usersData);
-  const text = event.body?.trim();
-  const lowered = text?.toLowerCase();
-
-  if (event.attachments && event.attachments.length > 0) {
-    const type = event.attachments[0].type;
-    let reaction = null;
-
-    if (type === "photo") reaction = "🫩";
-    else if (type === "animated_image") reaction = "😵‍💫";
-    else if (type === "video") reaction = "🤔";
-    else if (type === "audio") reaction = "🤕";
-
-    if (reaction) {
-      try {
-        await api.setMessageReaction(reaction, event.messageID, () => {}, true);
-      } catch (e) {
-        console.log("⚠️ Attachment reaction error:", e.message);
-      }
-      return;
-    }
-  }
-
-  if (!text) return;
-
-  if (lowered === "del" || lowered === "!baby del") {
-    try {
-      const originalReply = event.messageReply?.body || Reply?.body;
-      if (!originalReply) {
-        return api.sendMessage("❌ Couldn't read the original message to delete.", event.threadID, event.messageID);
-      }
-
-      const res = await API.get("/deleteByReply", { params: { reply: originalReply } });
-      return api.sendMessage(res.data.message, event.threadID, event.messageID);
-    } catch (e) {
-      console.error("❌ [baby/del] error:", e);
-      return api.sendMessage(`❌ Failed to delete: ${errMsg(e)}`, event.threadID, event.messageID);
-    }
-  }
-
-  if (Reply?.type === "msgSelect") {
-    if (event.senderID !== Reply.author) return;
-
-    const numbers = text
-      .split(",")
-      .map(n => parseInt(n.trim(), 10))
-      .filter(n => Number.isInteger(n));
-
-    if (numbers.length === 0) {
-      return api.sendMessage("❌ Send numbers like: 2, 7", event.threadID, event.messageID);
-    }
-
-    try {
-      const res = await API.post("/keepOnly", {
-        ask: Reply.trigger,
-        keepIndexes: numbers
-      });
-      return api.sendMessage(res.data.message, event.threadID, event.messageID);
-    } catch (e) {
-      console.error("❌ [baby/keepOnly] error:", e);
-      return api.sendMessage(`❌ Failed to update: ${errMsg(e)}`, event.threadID, event.messageID);
-    }
-  }
-
-  try {
-    return await deliverSimsimiResponse({ api, event, query: lowered, senderName });
-  } catch (e) {
-    console.error("❌ [baby/onReply] error:", e);
-    return api.sendMessage(`❌ Error: ${errMsg(e)}`, event.threadID, event.messageID);
-  }
-};
-
-const greetingReplies = [
-  "Amake dakso baby? 🙂🤌",
-  "Tumake Chara kisu Valo lage na 🥲",
-  "Tumar name ki 😒",
-  "Amake dakteso ken? Prem korba amar sathe?",
-  "Sudu baby Dake 🥲 Keu Valobasi bole na 😞💔",
-  "Prem Kore mon dila nah 😭",
-  "Tumar jonno e to eto sajgoj kora 🥺",
-  "Ekbar bolo bhalobasho, ami sob diye dibo 💔",
-  "Tumi chara ei chat e r keu nai amar 🥹",
-  "Ato sundor kore keu dake nai age 🙈",
-  "Tumake miss korchilam, ekhon e dakle 🥰",
-  "Prem na korle ken dako bar bar 😤",
-  "Ami to tomar e opekkhay silam 👉👈",
-  "Sunle mon uthe pore amar 🫣",
-  "Ekhane khali tumar jonno e boshe achi 🥺",
-  "Bar bar dakle to premei porbo mone hocche 😳",
-  "Emon kore dakle to gole jai ami 🫠",
-  "Tumar dak sunle onno kicu mone thake na 🙈"
-];
-
-function sendMessageAsync(api, text, threadID, replyToID) {
-  return new Promise((resolve, reject) => {
-    const cb = (err, info) => (err ? reject(err) : resolve(info));
-    if (replyToID) {
-      api.sendMessage(text, threadID, cb, replyToID);
-    } else {
-      api.sendMessage(text, threadID, cb);
-    }
-  });
-}
-
-async function sendGreeting(api, event) {
-  const reply = greetingReplies[Math.floor(Math.random() * greetingReplies.length)];
-
-  await sendTypingIndicatorV2(api, true, event.threadID);
-  await new Promise(r => setTimeout(r, 2000));
-  await sendTypingIndicatorV2(api, false, event.threadID);
-
-  let info;
-  try {
-    info = await sendMessageAsync(api, reply, event.threadID, event.messageID);
-  } catch (e) {
-    console.log("❌ greeting reply error:", JSON.stringify(e));
-    try {
-      info = await sendMessageAsync(api, reply, event.threadID);
-    } catch (e2) {
-      console.log("❌ greeting failed after retry:", JSON.stringify(e2));
-      return;
-    }
-  }
-
-  global.GoatBot.onReply.set(info.messageID, {
-    commandName: module.exports.config.name,
-    messageID: info.messageID,
-    author: event.senderID,
-    type: "simsimi"
-  });
-}
-
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    )
-  ]);
-}
-
-async function deliverSimsimiResponse({ api, event, query, senderName }) {
-  await sendTypingIndicatorV2(api, true, event.threadID);
-  let res;
-  try {
-    res = await API.get("/", {
-      params: {
-        text: query,
-        senderName,
-        threadID: event.threadID,
-        senderID: event.senderID
-      }
     });
-  } finally {
-    await sendTypingIndicatorV2(api, false, event.threadID);
-  }
 
-  const data = res.data || {};
+    // Romantic Quote
+    ctx.fillStyle = "#a13b80";
+    ctx.font = "italic 23px Arial";
 
-  if (data.rateLimited) return;
+    ctx.fillText(
+      random(quotes),
+      500,
+      810
+    );
 
-  if (data.reaction && event.messageID) {
-    withTimeout(
-      api.setMessageReaction(data.reaction, event.messageID, () => {}, true),
-      3000,
-      "setMessageReaction"
-    ).catch(e => console.log("⚠️ Reaction send error:", e.message));
-  }
+    // Footer
+    ctx.fillStyle = couple.theme2;
+    ctx.font = "bold 29px Arial";
+    ctx.fillText("MADE WITH LOVE ♥", 500, 940);
 
-  if (data.response) {
-    try {
-      const info = await sendMessageAsync(api, data.response, event.threadID, event.messageID);
-      global.GoatBot.onReply.set(info.messageID, {
-        commandName: module.exports.config.name,
-        messageID: info.messageID,
-        author: event.senderID,
-        type: "simsimi"
-      });
-    } catch (e) {
-      console.log("❌ sendMessage error:", JSON.stringify(e));
-      try {
-        const info2 = await sendMessageAsync(api, data.response, event.threadID);
-        global.GoatBot.onReply.set(info2.messageID, {
-          commandName: module.exports.config.name,
-          messageID: info2.messageID,
-          author: event.senderID,
-          type: "simsimi"
-        });
-      } catch (e2) {
-        console.log("❌ sendMessage failed after retry:", JSON.stringify(e2));
-      }
-    }
-  }
-}
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "20px Arial";
+    ctx.fillText("© Nahid Hasan", 500, 985);
 
-function isBotMentioned(event, uid) {
-  if (!uid || !event.mentions) return false;
-  return Object.prototype.hasOwnProperty.call(event.mentions, uid);
-}
-
-module.exports.onChat = async function ({ api, event, usersData }) {
-  const text = event.body?.toLowerCase().trim();
-
-  const senderName = await getUserName(api, event.senderID, usersData);
-  const triggers = ["baby", "bot", "bby", "beby", "bbz", "xan", "jan", "janu", "xanu", "বেবি", "জান", "বট", "জানু"];
-  const uid = getBotUID(api);
-
-  if (isBotMentioned(event, uid)) {
-    if (triggerLocks.has(event.threadID)) return;
-    triggerLocks.add(event.threadID);
-    try {
-      return await sendGreeting(api, event);
-    } finally {
-      triggerLocks.delete(event.threadID);
-    }
-  }
-
-  if (!text) return;
-
-  if (triggers.includes(text)) {
-    if (triggerLocks.has(event.threadID)) return;
-    triggerLocks.add(event.threadID);
+    const filePath = path.join(
+      outputDir,
+      `baby_${Date.now()}.png`
+    );
 
     try {
-      return await sendGreeting(api, event);
-    } finally {
-      triggerLocks.delete(event.threadID);
+      await fs.writeFile(
+        filePath,
+        canvas.toBuffer("image/png")
+      );
+
+      return api.sendMessage(
+        {
+          body:
+            `💕 BABY PREDICTION RESULT 💕\n\n` +
+            `❤️ Couple: ${couple.name1} & ${couple.name2}\n` +
+            `💖 Love: ${love}%\n` +
+            `👶 Future Babies: ${couple.babies}\n` +
+            `💌 ${random(quotes)}\n\n` +
+            `Wishing them a beautiful future! 🥰`,
+          attachment: fs.createReadStream(filePath)
+        },
+        threadID,
+        () => fs.unlink(filePath).catch(() => {}),
+        messageID
+      );
+    } catch (error) {
+      console.error(error);
+      return api.sendMessage(
+        "❌ Baby card তৈরি করতে সমস্যা হয়েছে!",
+        threadID,
+        messageID
+      );
     }
-  }
-
-  const matchPrefix = /^(baby|bot|bby|beby|bbz|xan|jan|janu|xanu|বেবি|জান|বট|জানু)\s+/i;
-  if (matchPrefix.test(text)) {
-    const query = text.replace(matchPrefix, "").trim();
-    if (!query) return;
-
-    if (triggerLocks.has(event.threadID)) return;
-    triggerLocks.add(event.threadID);
-
-    try {
-      return await deliverSimsimiResponse({ api, event, query, senderName });
-    } catch (e) {
-      console.error("❌ [baby/onChat] error:", e);
-      return api.sendMessage(`❌ Error: ${errMsg(e)}`, event.threadID, event.messageID);
-    } finally {
-      triggerLocks.delete(event.threadID);
-    }
-  }
-
-  if (!event.isGroup || !event.senderID || event.senderID === uid) return;
-
-  try {
-    await API.get("/autoteach", {
-      params: { text: event.body, senderName, senderID: event.senderID, threadID: event.threadID },
-      timeout: 10000
-    });
-  } catch (e) {
-    console.error("❌ [baby/autoteach] network error:", e.message);
   }
 };
