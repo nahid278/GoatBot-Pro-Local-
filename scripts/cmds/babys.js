@@ -5,7 +5,7 @@ const { createCanvas } = require("canvas");
 
 module.exports = {
   config: {
-    name: "baby",
+    name: "babys",
     version: "1.0.0",
     author: "Nahid Hasan",
     countDown: 5,
