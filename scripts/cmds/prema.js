@@ -229,7 +229,6 @@ const replies = {
     "Tumi age tomar kotha bolo! 🥰"
   ],
 
-  general: 
 general: [
   "O achha! Tarpor bolo? 😊",
   "Hmm, bujhlam! Tarpor ki holo? 🤔",
