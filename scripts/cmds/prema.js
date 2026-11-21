@@ -4855,9 +4855,11 @@ Object.assign(module.exports, {
 });
 
 console.log("[PREMA] Smart Question & Answer System loaded.");
-// ============================================
-// PART 13 - INTEGRATED GROUP MESSAGE HANDLER
-// ============================================
+
+
+ // ============================================
+ // PART 13 - INTEGRATED GROUP MESSAGE HANDLER
+ // ============================================
 
 async function handlePremaGroupMessage({ api, event }) {
   if (!GROUP_HANDLER_CONFIG.enabled) return;
@@ -5055,9 +5057,8 @@ async function handlePremaGroupMessage({ api, event }) {
       );
     }
 
-   
     // --------------------------------
-    // 7. SEND MESSAGE
+    // 7. SEND MESSAGE AS REPLY
     // --------------------------------
 
     await waitForGroupResponse(
@@ -5076,6 +5077,17 @@ async function handlePremaGroupMessage({ api, event }) {
     console.log(
       `[PREMA] ${responseType} reply sent to ${senderID}`
     );
+
+  } catch (error) {
+    console.error(
+      "[PREMA] Integrated Handler Error:",
+      error.stack || error.message
+    );
+
+  } finally {
+    setGroupProcessing(event, false);
+  }
+}
 
 // --------------------------------------------
 // UPDATE ONCHAT HANDLER
@@ -5099,297 +5111,7 @@ Object.assign(module.exports, {
 });
 
 console.log("[PREMA] Final Integration loaded.");
-// ============================================
-// PART 14 - FINAL TESTING SYSTEM
-// ============================================
 
-const PREMA_TEST_CONFIG = {
-  enabled: true,
-  checkMemory: true,
-  checkData: true,
-  checkHandlers: true,
-  showDetails: true
-};
-
-// --------------------------------------------
-// TEST RESULT STORAGE
-// --------------------------------------------
-
-const PREMA_TEST_RESULTS = {
-  total: 0,
-  passed: 0,
-  failed: 0,
-  warnings: [],
-  errors: [],
-  tests: []
-};
-
-// --------------------------------------------
-// RUN INDIVIDUAL TEST
-// --------------------------------------------
-
-function runPremaTest(name, callback) {
-  PREMA_TEST_RESULTS.total++;
-
-  try {
-    const result = callback();
-
-    if (result === false || result === null) {
-      throw new Error("Test returned an invalid result");
-    }
-
-    PREMA_TEST_RESULTS.passed++;
-
-    PREMA_TEST_RESULTS.tests.push({
-      name,
-      status: "PASSED"
-    });
-
-    return true;
-
-  } catch (error) {
-    PREMA_TEST_RESULTS.failed++;
-
-    PREMA_TEST_RESULTS.errors.push({
-      name,
-      message: error.message
-    });
-
-    PREMA_TEST_RESULTS.tests.push({
-      name,
-      status: "FAILED",
-      error: error.message
-    });
-
-    return false;
-  }
-}
-
-// --------------------------------------------
-// CHECK REQUIRED FUNCTIONS
-// --------------------------------------------
-
-function checkPremaFunctions() {
-  const requiredFunctions = [
-    "normalizeText",
-    "findBestCategory",
-    "generateNaturalResponse",
-    "generateFollowupReply",
-    "generateSmartQAResponse",
-    "handlePremaGroupMessage",
-    "isPremaCalled",
-    "isGroupMessage"
-  ];
-
-  const missing = requiredFunctions.filter(
-    name => typeof module.exports[name] !== "function"
-  );
-
-  if (missing.length) {
-    throw new Error(
-      "Missing functions: " + missing.join(", ")
-    );
-  }
-
-  return true;
-}
-
-// --------------------------------------------
-// CHECK MEMORY CONNECTION
-// --------------------------------------------
-
-function checkPremaMemory() {
-  if (!PREMA_TEST_CONFIG.checkMemory) {
-    return true;
-  }
-
-  if (!memory || typeof memory !== "object") {
-    throw new Error("Memory module not connected");
-  }
-
-  const required = [
-    "getUser",
-    "addMessage",
-    "rememberFact",
-    "recallFact"
-  ];
-
-  const missing = required.filter(
-    name => typeof memory[name] !== "function"
-  );
-
-  if (missing.length) {
-    throw new Error(
-      "Memory functions missing: " + missing.join(", ")
-    );
-  }
-
-  return true;
-}
-
-// --------------------------------------------
-// CHECK DATA CONNECTION
-// --------------------------------------------
-
-function checkPremaData() {
-  if (!PREMA_TEST_CONFIG.checkData) {
-    return true;
-  }
-
-  if (!premaData || typeof premaData !== "object") {
-    throw new Error("Prema Data not connected");
-  }
-
-  if (
-    !premaData.categories ||
-    typeof premaData.categories !== "object"
-  ) {
-    throw new Error("Data categories not found");
-  }
-
-  const categoryCount = Object.keys(
-    premaData.categories
-  ).length;
-
-  if (categoryCount === 0) {
-    throw new Error("No reply categories found");
-  }
-
-  return true;
-}
-
-// --------------------------------------------
-// CHECK HANDLER CONNECTION
-// --------------------------------------------
-
-function checkPremaHandlers() {
-  if (!PREMA_TEST_CONFIG.checkHandlers) {
-    return true;
-  }
-
-  if (typeof module.exports.onChat !== "function") {
-    throw new Error("onChat handler missing");
-  }
-
-  if (typeof module.exports.onStart !== "function") {
-    throw new Error("onStart handler missing");
-  }
-
-  return true;
-}
-
-// --------------------------------------------
-// CHECK TEXT MATCHING
-// --------------------------------------------
-
-function checkPremaMatching() {
-  const result = normalizeText("Hello PREMA!");
-
-  if (result !== "hello prema") {
-    throw new Error("Text normalization failed");
-  }
-
-  return true;
-}
-
-// --------------------------------------------
-// CHECK FOLLOW-UP SYSTEM
-// --------------------------------------------
-
-function checkPremaFollowup() {
-  if (!isFollowupMessage("ha")) {
-    throw new Error("Follow-up detection failed");
-  }
-
-  if (!isFollowupMessage("tarpor")) {
-    throw new Error("Continuation detection failed");
-  }
-
-  return true;
-}
-
-// --------------------------------------------
-// CHECK QUESTION SYSTEM
-// --------------------------------------------
-
-function checkPremaQuestion() {
-  if (!isSmartQuestion("keno emon holo")) {
-    throw new Error("Question detection failed");
-  }
-
-  if (
-    detectSmartQuestionType("keno emon holo") !== "why"
-  ) {
-    throw new Error("Question type detection failed");
-  }
-
-  return true;
-}
-
-// --------------------------------------------
-// RUN COMPLETE TEST
-// --------------------------------------------
-
-function runPremaFullTest() {
-  PREMA_TEST_RESULTS.total = 0;
-  PREMA_TEST_RESULTS.passed = 0;
-  PREMA_TEST_RESULTS.failed = 0;
-  PREMA_TEST_RESULTS.warnings = [];
-  PREMA_TEST_RESULTS.errors = [];
-  PREMA_TEST_RESULTS.tests = [];
-
-  runPremaTest(
-    "Core Functions",
-    checkPremaFunctions
-  );
-
-  runPremaTest(
-    "Memory Connection",
-    checkPremaMemory
-  );
-
-  runPremaTest(
-    "Data Connection",
-    checkPremaData
-  );
-
-  runPremaTest(
-    "Event Handlers",
-    checkPremaHandlers
-  );
-
-  runPremaTest(
-    "Text Matching",
-    checkPremaMatching
-  );
-
-  runPremaTest(
-    "Follow-up System",
-    checkPremaFollowup
-  );
-
-  runPremaTest(
-    "Question System",
-    checkPremaQuestion
-  );
-
-  const report = {
-    ...PREMA_TEST_RESULTS,
-    successRate: PREMA_TEST_RESULTS.total
-      ? Math.round(
-          PREMA_TEST_RESULTS.passed /
-          PREMA_TEST_RESULTS.total * 100
-        )
-      : 0,
-    completedAt: new Date().toISOString()
-  };
-
-  console.log("\n========== PREMA TEST REPORT ==========");
-  console.log(JSON.stringify(report, null, 2));
-  console.log("=======================================\n");
-
-  return report;
-}
 
 // --------------------------------------------
 // EXPORT PART 14
