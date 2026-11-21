@@ -5055,6 +5055,7 @@ async function handlePremaGroupMessage({ api, event }) {
       );
     }
 
+   
     // --------------------------------
     // 7. SEND MESSAGE
     // --------------------------------
@@ -5066,7 +5067,8 @@ async function handlePremaGroupMessage({ api, event }) {
     await sendPremaGroupMessage(
       api,
       reply,
-      threadID
+      threadID,
+      event.messageID
     );
 
     updateGroupCooldown(event);
@@ -5074,16 +5076,6 @@ async function handlePremaGroupMessage({ api, event }) {
     console.log(
       `[PREMA] ${responseType} reply sent to ${senderID}`
     );
-
-  } catch (error) {
-    console.error(
-      "[PREMA] Integrated Handler Error:",
-      error.stack || error.message
-    );
-  } finally {
-    setGroupProcessing(event, false);
-  }
-}
 
 // --------------------------------------------
 // UPDATE ONCHAT HANDLER
