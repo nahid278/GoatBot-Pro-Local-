@@ -3978,11 +3978,17 @@ function waitForGroupResponse(delay) {
   });
 }
 
+
 // --------------------------------------------
 // SEND PREMA MESSAGE
 // --------------------------------------------
 
-function sendPremaGroupMessage(api, message, threadID) {
+function sendPremaGroupMessage(
+  api,
+  message,
+  threadID,
+  replyToMessageID = null
+) {
   return new Promise((resolve, reject) => {
     try {
       api.sendMessage(
@@ -3994,7 +4000,8 @@ function sendPremaGroupMessage(api, message, threadID) {
           } else {
             resolve(true);
           }
-        }
+        },
+        replyToMessageID || undefined
       );
     } catch (error) {
       reject(error);
