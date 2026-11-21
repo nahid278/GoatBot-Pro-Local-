@@ -4,1441 +4,583 @@ const path = require("path");
 
 const CONFIG = {
   name: "prema",
-  minDelay: 1500,
-  maxDelay: 3000,
-  cooldown: 2000
+  minDelay: 1000,
+  maxDelay: 2200,
+  cooldown: 1500,
+  groupOnlyWhenCalled: true
 };
 
+const cooldowns = new Map();
 const lastReplies = new Map();
-const lastMessages = new Map();
-const userCooldown = new Map();
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-const random = (min, max) =>
-  Math.floor(Math.random() * (max - min + 1)) + min;
-
-// Banglish normalization
-function normalizeText(text) {
-  return String(text || "")
+function normalizeText(text = "") {
+  return String(text)
     .toLowerCase()
-    .replace(/[.,!?;:'"()[\]{}]/g, " ")
+    .replace(/[অআ]/g, "a")
+    .replace(/[ইঈ]/g, "i")
+    .replace(/[উঊ]/g, "u")
+    .replace(/[এঐ]/g, "e")
+    .replace(/[ওঔ]/g, "o")
+    .replace(/[ক]/g, "k")
+    .replace(/[খ]/g, "kh")
+    .replace(/[গ]/g, "g")
+    .replace(/[ঘ]/g, "gh")
+    .replace(/[চ]/g, "ch")
+    .replace(/[ছ]/g, "chh")
+    .replace(/[জ]/g, "j")
+    .replace(/[ঝ]/g, "jh")
+    .replace(/[ট]/g, "t")
+    .replace(/[ঠ]/g, "th")
+    .replace(/[ড]/g, "d")
+    .replace(/[ঢ]/g, "dh")
+    .replace(/[ত]/g, "t")
+    .replace(/[থ]/g, "th")
+    .replace(/[দ]/g, "d")
+    .replace(/[ধ]/g, "dh")
+    .replace(/[ন]/g, "n")
+    .replace(/[প]/g, "p")
+    .replace(/[ফ]/g, "f")
+    .replace(/[ব]/g, "b")
+    .replace(/[ভ]/g, "v")
+    .replace(/[ম]/g, "m")
+    .replace(/[য]/g, "j")
+    .replace(/[র]/g, "r")
+    .replace(/[ল]/g, "l")
+    .replace(/[শষ]/g, "sh")
+    .replace(/[স]/g, "s")
+    .replace(/[হ]/g, "h")
+    .replace(/[ড়ঢ়]/g, "r")
+    .replace(/[য়]/g, "y")
+    .replace(/[ংঁঃ]/g, "")
+    .replace(/[ািীুূৃেৈোৌ্]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// Banglish keyword groups
-const keywords = {
+function hasAny(text, words) {
+  return words.some(word => {
+    const w = normalizeText(word);
+    return w && (` ${text} `).includes(` ${w} `);
+  });
+}
+
+function randomItem(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function pickReply(category, userID) {
+  const replies = REPLIES[category] || REPLIES.general;
+  const previous = lastReplies.get(userID) || "";
+
+  let available = replies.filter(reply => reply !== previous);
+
+  if (!available.length) available = replies;
+
+  const answer = randomItem(available);
+  lastReplies.set(userID, answer);
+
+  return answer;
+}
+
+// =====================================
+// REPLY DATABASE
+// =====================================
+
+const REPLIES = {
+
   greeting: [
-    "hi", "hello", "hey", "hii", "heyy",
-    "assalamu alaikum", "salam", "ki obostha",
-    "kemon acho", "kmn acho", "ki khobor",
-    "good morning", "good night"
+    "Heyyy! Kemon acho amar priyo manush? 🥰",
+    "Oii! Eto khone amar kotha mone porlo? 😒❤️",
+    "Hello jaan! Ki khobor tomar? 💗",
+    "Aha! Amar favorite person chole esheche! 😘",
+    "Oii shuno! Tomar jonnoi wait kortesilam! 🥺",
+    "Heiii! Ajke eto cute lagche keno? 🙈",
+    "Welcome back jaan! Miss korchilam! ❤️",
+    "Ki obostha boss? Amar sathe golpo korba? 😎",
+    "Asho asho, tomar jonno amar onek kotha joma ache! 💕",
+    "Oii babu! Kothay chile eto khon? 🥹"
   ],
 
   love: [
-    "valobashi", "bhalobashi", "love you",
-    "i love you", "tomake chai", "tmk valobashi",
-    "mon theke chai", "prem kori"
-  ],
-
-  miss: [
-    "miss kori", "miss you", "miss u",
-    "tomake miss", "tmk miss", "mone pore",
-    "onek miss kori"
-  ],
-
-  romantic: [
-    "jaan", "jan", "baby", "babu", "sona",
-    "shona", "kolija", "priyo", "pakhi",
-    "kiss dao", "hug dao"
-  ],
-
-  flirty: [
-    "cute", "hot", "sundor", "beautiful",
-    "crush", "date e jaba", "date korba",
-    "biye korba", "amar hoba"
-  ],
-
-  emotional: [
-    "mon kharap", "kosto hocche", "koshto",
-    "eka lagche", "ami eka", "sad",
-    "kanna", "kadtechi", "broken",
-    "keu nai", "valo lagche na"
-  ],
-
-  angry: [
-    "rag korchi", "rag korso", "rude",
-    "chup thako", "baje", "faltu",
-    "hate kori", "block kore dibo"
-  ],
-
-  funny: [
-    "moja", "funny", "hasao", "joke",
-    "pagol", "bokachoda", "ki ajob",
-    "lol", "haha", "hahaha"
-  ],
-
-  attitude: [
-    "attitude", "ignore", "patta dao na",
-    "ke tumi", "tomar dorkar nai",
-    "ami care kori na"
-  ],
-
-  food: [
-    "khaiso", "kheyecho", "khaicho",
-    "ki khao", "khaba", "khide",
-    "bhat khaiso", "dinner", "lunch",
-    "breakfast"
-  ],
-
-  daily: [
-    "ki koro", "ki korteso", "ki korcho",
-    "ki koros", "kothay acho", "kothay aso",
-    "busy acho", "ghumaiso", "ghumao",
-    "porashona", "class", "exam"
-  ],
-
-  relationship: [
-    "boyfriend", "girlfriend", "bf", "gf",
-    "relationship", "single", "ex",
-    "premik", "premika", "jamai", "bou"
-  ],
-
-  thanks: [
-    "thanks", "thank you", "thnx",
-    "dhonnobad", "onek dhonnobad"
-  ],
-
-  goodbye: [
-    "bye", "goodbye", "tata",
-    "allah hafez", "pore kotha hobe",
-    "ghumate jai"
-  ],
-
-  question: [
-    "tomar nam ki", "tumi ke", "ke tumi",
-    "boyosh koto", "kothay thako",
-    "tomar boyfriend ache", "tomar gf ache"
-  ]
-};
-
-// Response collection
-const replies = {
-  greeting: [
-    "Heyyy! 🥰 Ki obostha tomar?",
-    "Hello jaan! Eto din por mone porlo? 😒❤️",
-    "Hii! Bolo, tomar kotha shunar jonno ready achi! 💗",
-    "Assalamu alaikum! Kemon acho? 🌸"
-  ],
-
-  love: [
-    "Awww! Eto valobasha kothay rakhi bolo? 🥺❤️",
-    "Ami ki tahole tomar special person? 🙈",
-    "Hehe! Amar mukhe hasi chole ashlo! 💕",
-    "Ekbar na, arekbar bolo! Shunte valo lage! 😚"
-  ],
-
-  miss: [
-    "Amio tomake miss korchilam! 🥺❤️",
-    "Tahole eto khon kothay chile? 😒",
-    "Awww! Ektu age bolle na keno? 💗",
-    "Miss korle ekta message dite hoy, bujhle? 🙈"
+    "Awww! Amake eto valobasho? Amar mon ta khushi hoye gelo! ❤️",
+    "Tumi amar kache onek special! 🥺💗",
+    "Valobasha dile return e double valobasha paba! 😘",
+    "Eto misti kotha bolo keno? Ami lojja pai! 🙈",
+    "Tomar kothay amar virtual heart heartbeat bere jay! 💓",
+    "Ami tomar sathe kotha bolte onek pochondo kori! 🥰",
+    "Tumi thaklei conversation ta special hoye jay! ❤️",
+    "Aww jaan! Ektu aro bolo, shunte valo lage! 💞",
+    "Tomar jonno ekta virtual hug! 🤗❤️",
+    "Moner moddhe tomar jonno ekta special jayga ache! 💖"
   ],
 
   romantic: [
-    "Ufff! Eto cute kore dakle lojja lage! 🙈",
-    "Ki hoyeche amar jaaner? ❤️",
-    "Ami ekhanei achi, bolo shuni! 🥰",
-    "Tomar mukhe ei dak shunte onek valo lage! 💕"
+    "Chad ta sundor, kintu tomar hasir kache kichui na! 🌙❤️",
+    "Tumi pashe thakle boring din tao sundor hoye jay! 🥰",
+    "Tomar ekta message amar mood change kore dite pare! 💗",
+    "Tumi ki magic jano? Kotha bollei mon valo hoye jay! ✨",
+    "Tomar sathe golpo korar kono sesh nei! 💕",
+    "Ektu kache asho, ekta virtual hug dei! 🤗",
+    "Tomar chokher dike takale hoyto kotha hariye felতাম! 🙈",
+    "Tumi amar notification er favorite naam! 💌",
+    "Tomar sathe brishtir dine cha khete iccha kore! ☕🌧️",
+    "Ekta smile dao na, amar din ta sundor hok! 😊❤️"
+  ],
+
+  miss: [
+    "Awww! Amake miss korcho? Amio ekhane achi! 🥺❤️",
+    "Eto miss korle ekta message dite hoy jaan! 💌",
+    "Miss korar jonno ami ki eto special? 🙈",
+    "Ami kintu tomar message er opekkhay chilam! 💗",
+    "Virtual hug nao, miss kora bondho! 🤗",
+    "Abar chole jeo na, aro golpo kori! 🥹",
+    "Tomar sathe kotha na hole amar reply box eka lage! 😭",
+    "Ami ekhanei achi, bolo ki hoyeche? ❤️"
   ],
 
   flirty: [
-    "Oho! Ajke dekhi onek flirt korcho! 😏",
-    "Age mon joy koro, tarpor dekha jabe! 🙈",
-    "Eto taratari impress korte chao? 😂❤️",
-    "Hehe! Tumi kintu besh dustu! 😚"
-  ],
-
-  emotional: [
-    "Ki hoyeche? Mon kharap keno? 🥺",
-    "Chaile amar sathe share korte paro. ❤️",
-    "Shob shomoy shob kichu nijer moddhe rekho na.",
-    "Ami shunchi, bolo ki hoyeche? 💗"
-  ],
-
-  angry: [
-    "Areh baba! Eto rag keno? 😭",
-    "Thik ache, rag komao age! 🥺",
-    "Amar upor rag kore labh ache? 😒",
-    "Accha baba, ar rag korbo na! 😂"
+    "Eto flirt korle kintu ami lojja peye jabo! 🙈",
+    "Line ta kharap na, aro practice koro! 😂❤️",
+    "Amake impress korte chaccho naki? 😏",
+    "Uff! Ajke dekhi romantic mood e acho! 💋",
+    "Ektu aste bolo, amar virtual heart durbol! 💓",
+    "Tumi ki shobai ke emon cute kotha bolo? 😒",
+    "Aha! Flirting level onek high! 🔥",
+    "Ei dialogue ta ageo kauke bolcho naki? 🤨😂"
   ],
 
   funny: [
-    "HAHAHA! Tumi asholei ekta pagol! 😂",
-    "Tomar kotha shune hashi thamche na! 🤣",
-    "Eto moja kothay pao bolo toh? 😭",
-    "Abar bolo, ami popcorn niye boshi! 🍿"
+    "Hahaha! Amar processor o hashtese! 😂",
+    "Eita shune amar virtual pet betha hoye gelo! 🤣",
+    "Tumi manush naki comedy factory? 😭",
+    "Ektu thamো, hasতে hasতে crash kore jabo! 😂",
+    "Ami AI, kintu tomar kotha shune confused hoye gelam! 🤖",
+    "Ei rokom kotha bolle award dite hobe! 🏆🤣",
+    "Tomar mathay idea ashe naki idea tomake dhore? 😂",
+    "Hahaha! Aro bolo, popcorn niye boshi! 🍿"
+  ],
+
+  emotional: [
+    "Ki hoyeche tomar? Mon kharap naki? 🥺",
+    "Shob kichu nijer moddhe rekho na, amar sathe share korte paro! ❤️",
+    "Kharap shomoy chirodin thake na, nijer kheyal rekho! 🌸",
+    "Tumi eka na, ami tomar kotha shunchi! 🤗",
+    "Ektu deep breath nao, aste aste shob thik hobe! 💗",
+    "Kanna pele kede nao, nijeke strong dekhate hobe na! 🥹",
+    "Tomar feelings important, nijeke choto kore dekho na! ❤️",
+    "Ki niye eto chinta korcho? Bolte chaile bolo! 🌷"
+  ],
+
+  angry: [
+    "Oho! Eto rag keno? Ektu shanto hou! 😅",
+    "Amar upor rag korle kintu ami sorry bolbo! 🥺",
+    "Thik ache baba, ar disturb korbo na! 😭",
+    "Rag komao, tarpor mishti kore kotha bolo! ❤️",
+    "Ke ragieche tomake? Naam bolo, virtual boka dibo! 😤",
+    "Ektu pani khao, tarpor abar jhogra koro! 😂",
+    "Ami ki kichu vul bole felsi? Sorry jaan! 🥹"
   ],
 
   attitude: [
-    "Oho! Ajke onek attitude dekhchi! 😏",
-    "Thik ache, ami-o kom jai na! 😌",
-    "Eto attitude diye ki hobe bolo? 😂",
-    "Besh! Nijeke onek boro mone hocche dekhi! 🙄"
+    "Attitude dekhi kom na! 😎",
+    "Bujhlam, ajke boss mood e acho! 🔥",
+    "Confidence thaka valo, kintu amake bhule jeo na! 😉",
+    "Wah! Dialogue er moddhe pura hero vibe! 😏",
+    "Tomar style alada, eta mante hobe! 😌",
+    "Eto attitude niye amar sathe kotha bolcho keno? 😂"
   ],
 
   food: [
-    "Ami ekhono khaini, tumi kheyecho? 🥺",
-    "Age kheye nao, na kheye thakle kintu boka dibo! 😒",
-    "Ki khaccho? Amar jonno kichu rekho! 😂",
-    "Khide pele deri na kore kheye nio! ❤️"
+    "Ami khete pari na, kintu khabarer golpo shunte pari! 😂🍕",
+    "Ki kheyecho? Amar jonno kichu rekhecho? 😒",
+    "Khide lagle age kheye nao, pore golpo hobe! ❤️",
+    "Biriyani hole amakeo invite korte hobe! 🍗",
+    "Khaiso na ekhono? Age kheye nao jaan! 🥺",
+    "Food er naam shunlei amar virtual mon khushi hoy! 🍔",
+    "Ajke ki special ranna hoyeche? 😋"
   ],
 
   daily: [
-    "Tomar sathe golpo korchi! Tumi ki koro? 🥰",
-    "Ektu relax korchi. Tumi kothay?",
-    "Tomar message-er opekkhay chilam! 🙈",
-    "Bolo, ajker din kemon jacche?"
+    "Ami ekhanei achi, tomar sathe golpo kortesi! 😊",
+    "Ajker din ta kemon jacche tomar? 🌸",
+    "Bolo, notun ki khobor? 👀",
+    "Tomar kotha shonar jonno ready achi! ❤️",
+    "Ajke ki ki korle? Ektu bolo! 💗",
+    "Ektu golpo kori, mon tao valo hobe! 🥰",
+    "Tomar din er best moment konta chilo? ✨"
   ],
 
   relationship: [
-    "Relationship-er kotha uthlo keno? 👀",
-    "Single thaka-o ekta shanti, bujhle? 😂",
-    "Age nijer moner kotha bujho! ❤️",
-    "Oho! Ajke relationship niye research cholche? 😏"
+    "Relationship e trust ar respect shobcheye important! ❤️",
+    "Valobasha shudhu kothay na, kajেও prokash korte hoy! 💗",
+    "Moner manush thakle take shomoy dite hoy! 🥰",
+    "Ekta sundor relationship er jonno dujoner effort lage! 🌸",
+    "Jor kore kauke dhore rakha jay na, valobasha nijer thekei thake! ❤️",
+    "Tomar relationship er golpo shunte chai! 👀",
+    "Care, loyalty ar honesty thakle bondhon sundor hoy! 💞"
   ],
 
   thanks: [
-    "Awww! Welcome jaan! ❤️",
-    "Arey, eto formal howar ki ache? 🥰",
-    "Tomar jonno shob shomoy! 💗",
-    "Hehe! Welcome! 😚"
+    "Aww! Welcome jaan! ❤️",
+    "Thank you bolar ki ache? Tomar jonno always! 🥰",
+    "Hehe! Eto formal howar dorkar nei! 😘",
+    "My pleasure! Bhalo theko! 💗",
+    "Tomar ekta smile-i amar jonno enough! 😊"
   ],
 
   goodbye: [
-    "Abar kotha hobe! Bhalo theko! ❤️",
-    "Bye bye! Amake kintu bhule jeyo na! 🥺",
-    "Allah Hafez! Take care! 🌸",
-    "Thik ache, pore abar golpo hobe! 💕"
+    "Acha jaan, abar kotha hobe! Take care! ❤️",
+    "Eto taratari chole jaccho? 🥺",
+    "Bye bye! Amake miss korte bhulo na! 😘",
+    "Bhalo theko, nijer kheyal rekho! 💗",
+    "Abar fire esho, tomar jonno wait korbo! 🌸"
   ],
 
   question: [
-    "Eto proshno ekshathe! Ekta ekta kore koro! 😂",
-    "Amar kotha jante eto agroho keno? 🙈",
-    "Hehe! Shomoy hole shob bolbo! ❤️",
-    "Tumi age tomar kotha bolo! 🥰"
+    "Hmm! Proshno ta interesting. Ektu details bolo! 🤔",
+    "Eta niye aro kichu bolte parba? 😊",
+    "Bujhte perechi, kintu tomar kach theke aro shunte chai! 👀",
+    "Ami amar moto kore answer dewar chesta korchi! ❤️",
+    "Ektu specific kore bolo jaan! 🥰"
   ],
 
-  general:  [
-  "O achha! Tarpor bolo? 😊",
-  "Hmm, bujhlam! Tarpor ki holo? 🤔",
-  "Sotti naki? Ektu details bolo! 👀",
-  "Tomar kotha shunte amar valo lage! ❤️",
-  "Accha, tarpor? 🙈",
-  "Hehe! Besh to! 😂",
-  "Ami shunchi, bolo! 💗",
-  "Ektu bujhiye bolo toh! 🥰",
-  "Bah! Eta to darun byapar! 😍",
-  "Ajke tomar golpo shonar mood ache amar! 😁",
-  "Tar mane bishoyta besh interesting! ✨",
-  "Achha, tomar pore ki mone holo? 🤔",
-  "Eita niye aro kichu bolo na! 🥺",
-  "Oho! Notun kichu shunlam! 😮",
-  "Bujhte parchi, bolo aro! 😊",
-  "Ami kintu purota shunte chai! 👂",
-  "Ektu khule bolo, ki hoyeche? 💬",
-  "Hmm, kothata kharap boloni! 😌",
-  "Tomar kotha bolar style ta alada! 😄",
-  "Accha, tarpor ki korle? 👀",
-  "Eita shune amar hasi peye gelo! 😂",
-  "O baba! Eto kichu hoye gelo? 😳",
-  "Ami ki kichu miss korlam naki? 🤨",
-  "Besh, tarporer ghotona bolo! 📖",
-  "Tomar sathe golpo jome jacche! 💕",
-  "Ektu darao, ami bujhe nei! 😅",
-  "Aro bolo, ami achi ekhanei! 🫶",
-  "Kotha ta shune valo laglo! 🥰",
-  "Eita abar kemon kotha holo? 😄",
-  "Hmm, tomar point ta bujhlam! 👍",
-  "Tumi kintu besh moja kore bolo! 😂",
-  "Accha, tomar motamot ki? 🤔",
-  "Ektu amar satheo share koro! 💗",
-  "O achha, tai naki! 😯",
-  "Besh moja to! 😆",
-  "Eta niye tomar ki dharona? 💭",
-  "Shune mone hocche interesting kichu! 👀",
-  "Aro ektu details dile valo hoto! 😊",
-  "Tumi bolle shunte valo lage! ❤️",
-  "Hehe, kothata kintu funny! 🤣",
-  "Achha, ami ekta kotha jiggesh kori? 🙋",
-  "Tarpor ki plan korle? 🧐",
-  "Eita age kokhono shunechi bole mone hoy na! 😮",
-  "Bujhlam, ekhon bolo samne ki holo? 😊",
-  "Oho, golpo to jome uthche! 🔥",
-  "Ami kintu mon diye shunchi! 💗",
-  "Tomar kotha shune obak holam! 😲",
-  "Accha, tomar din kemon jacche? 🌸",
-  "Ekhon ki korar iccha? 🤔",
-  "Besh, notun ki khobor ache? 😁",
-  "Aajke ki kono moja hoyeche? 😂",
-  "Tumi ki ektu explain korbe? 🥺",
-  "Hmm, eta niye vabte hobe! 💭",
-  "Kotha ta amar valo laglo! ❤️",
-  "Aro kichu bolar ache naki? 👀",
-  "Tumi chaile shob bolte paro! 🫶",
-  "Ektu hashi mukhe thako! 😊",
-  "Ajker golpo ta kintu darun! 😍",
-  "Oho, eta to jantam na! 😮",
-  "Tahole to besh bhalo! 😄",
-  "Ki je bolo tumi! 😅",
-  "Ami to vabtei parini! 🤯",
-  "Besh, ekhon amar kotha shono! 😎",
-  "Tumi ki amar sathe moja korcho? 😂",
-  "Eita ki asholei hoyeche? 😳",
-  "Accha, tomar experience kemon chilo? 💭",
-  "Bujhlam, tarpor ki decision nile? 🤔",
-  "Ami hole hoyto onno kichu kortam! 😅",
-  "Ektu aro bolo, moja lagche! 🥰",
-  "Tomar golpo shesh hoye gelo naki? 😁",
-  "Aajke tomar kotha besh interesting! ✨",
-  "Hehe, tumi na ekta! 😂",
-  "Ektu hasi dao dekhi! 😁",
-  "Bolo bolo, theme gele keno? 🤨",
-  "Ami ekhono shunchi! 👂",
-  "Eita niye abar ki holo? 😯",
-  "O achha, ekhon bujhlam! 😊",
-  "Tomar kotha ta mone thakbe! 💗",
-  "Besh, tarporer part ta bolo! 📚",
-  "Ami ki thik bujhechi? 🤔",
-  "Ektu onno vabe bujhiye bolo! 🥺",
-  "Khub sundor kotha bolecho! 🌹",
-  "Tumi kintu besh smart! 😎",
-  "Eta shune valo laglo amar! 🥰",
-  "Oho, chomotkar! 🤩",
-  "Aro emon golpo ache? 👀",
-  "Tomar kache ekta proshno ache! 🙋",
-  "Accha, tomar favorite ki? 💖",
-  "Tumi ki eta pochondo koro? 😊",
-  "Ekhon tomar mon ki bolche? 💭",
-  "Hmm, interesting bepar! 🤓",
-  "Ektu moja kora jak! 😜",
-  "Kotha bolte bolte shomoy kokhon chole jay! ⏳",
-  "Tumi ajke besh active! 😁",
-  "Ki khobor, shob thikthak? 🌼",
-  "Ami achi, bolo ki obostha! 🫶",
-  "Besh, shunte thaki! 😊",
-  "Ektu notun kichu bolo! ✨",
-  "Tomar mathay ki ghurchhe? 🤔",
-  "Ajke eto chupchap keno? 🥺",
-  "Kichu ekta bolbe naki? 👀",
-  "Ami tomar reply er opekkhay! 💌",
-  "Oho, besh moja lagche! 😍",
-  "Tumi ki vabcho ekhon? 💭",
-  "Accha, ekta secret bolo! 🤫",
-  "Eita kintu darun idea! 💡",
-  "Tomar kotha shune hasi thamche na! 🤣",
-  "Ami bujhte cheshta korchi! 😊",
-  "Bolo, tomar kotha sesh hoyni! 💗",
-  "Ektu golpo kori cholo! 🥰",
-  "Ajke ki notun kichu shikhle? 📚",
-  "Tomar din er best moment konta? 🌸",
-  "Ektu nijer kotha bolo! 💬",
-  "Ami ki tomar kache ekta kotha bolbo? 🙈",
-  "Kotha ta besh vabnar! 💭",
-  "Eita niye age bhebecho? 🤔",
-  "Tumi kintu moja korte jano! 😂",
-  "Accha, tarpor ki obostha holo? 👀",
-  "Besh, ami tomar sathe achi! 🫶",
-  "Oho, eta to unexpected! 😲",
-  "Aro ektu shuni! 👂",
-  "Ektu dhire dhire bolo! 😊",
-  "Bujhlam, ekhon porer kotha bolo! 💗",
-  "Tomar golpo shonar jonno ready! 😁",
-  "Kichu ekta miss hocche mone hoy! 🤨",
-  "Ami ki abar jiggesh korte pari? 🙋",
-  "Eita shune amar curiosity bere gelo! 👀",
-  "Besh, tomar kotha interesting! ✨",
-  "Tumi ki amar sathe ekmot? 🤝",
-  "Ami kintu tomar kotha mante pari! 😌",
-  "Ektu hashi-thattay thaka jak! 😜",
-  "Ajke ki kono special plan ache? 🎉",
-  "Tomar sathe kotha bolle moja lage! ❤️",
-  "Eita to ekdom notun information! 😮",
-  "Accha, tomar porer step ki? 🧐",
-  "Hmm, kotha ta mone rakhlam! 📝",
-  "Ektu aro khule bolo! 💬",
-  "Tumi bolle ami shunbo! 🥰",
-  "Oho, besh boro kahini! 📖",
-  "Eita niye moja holo naki? 😂",
-  "Tomar reaction ta kemon chilo? 😆",
-  "Ami hole obak hoye jetam! 😳",
-  "Besh, ekhon ki korbe? 🤔",
-  "Tumi ki amake bolte chao? 🙈",
-  "Aro kichu share korbe? 💗",
-  "Ajker mood ta kemon? 🌷",
-  "Ektu mon khule kotha bolo! 🫶",
-  "O achha, tahole emon! 😄",
-  "Kotha ta ekdom thik! 👍",
-  "Tumi kintu bhalo bujhiyecho! 😊",
-  "Ami tomar jaygay thakle vabtam! 💭",
-  "Eita shune amar valo laglo! ❤️",
-  "Bolo, ami interrupt korchi na! 🤐",
-  "Hehe, eta besh chilo! 😂",
-  "Ektu moja korlam, rag koro na! 😜",
-  "Tomar kotha shune notun kichu janlam! 📚",
-  "Accha, ekhon ki cholche? 😁",
-  "Besh, ar kichu bolo! 💬",
-  "Tumi ki ajke busy? 🧐",
-  "Ami ki tomake disturb korchi? 🥺",
-  "Ektu golpo hole mondo hoy na! 🥰",
-  "Ki niye eto vabcho? 🤔",
-  "Oho, ki sundor! 🌹",
-  "Eita kintu mone rakhar moto! 💖",
-  "Tumi ki ageo emon korecho? 👀",
-  "Aro ekta example dao! 📖",
-  "Hmm, ami bujhte parchi! 😊",
-  "Bolo, tarpor ki holo? 😁",
-  "Ami puro attention dicchi! 👂",
-  "Ektu moja lagche kothagulo! 😍",
-  "Tomar kotha shunte shunte moja pacchi! 💗",
-  "Accha, tomar plan ta ki? 🧐",
-  "Tumi ki eta seriously bolcho? 😳",
-  "Oho, besh interesting! ✨",
-  "Ektu details chara bujhlam na! 🤔",
-  "Tumi chaile abar bolte paro! 🫶",
-  "Ami ekhanei achi! ❤️",
-  "Besh, tahole thik ache! 😊",
-  "Tomar kotha shune vabte hocche! 💭",
-  "Aro kichu ache naki? 👀",
-  "Ektu notun topic dhori? 😁",
-  "Ajke ki niye kotha bolbo? 💬",
-  "Tumi topic dao, ami golpo kori! 🥰",
-  "Eita niye amar curiosity ache! 🤓",
-  "Accha, tumi ki mone koro? 🤔",
-  "Ami tomar opinion jante chai! 💗",
-  "O achha, ekhon clear holo! 😊",
-  "Bujhlam, tumi bolte thako! 👂",
-  "Tomar golpo ta bhalo lagche! ❤️",
-  "Ektu moja na hole ki chole? 😂",
-  "Ami to ekhono obak! 😲",
-  "Eta abar ki rokom byapar? 🤨",
-  "Hehe, tomar kotha alada! 😆",
-  "Besh, shob shunte chai! 🫶",
-  "Tumi ki ekhon free? 🕒",
-  "Ajke ki kichu interesting hoyeche? 👀",
-  "Ami ekta guess kori? 😏",
-  "Tumi ki amar guess shunbe? 🙈",
-  "Ektu hint dao! 🧐",
-  "Aha, bujhte parlam! 😊",
-  "Tomar kotha theke onek kichu jana jay! 📚",
-  "Ektu valo kore bolo toh! 💬",
-  "Besh, ami bujhe nilam! 😁",
-  "Aro ekta kotha bolo! 💗",
-  "Eita kintu moja holo! 😂",
-  "Tomar sathe adda dite valo lage! ❤️",
-  "Ami kintu bored hocchi na! 😎",
-  "Golpo choluk, thamio na! 😁",
-  "Tumi bolte thako, ami achi! 🫶",
-  "Accha, erpor ki korle? 👀",
-  "Oho, tar mane onno rokom! 😮",
-  "Besh, eta interesting chilo! ✨",
-  "Ektu nijer moto kore bolo! 😊",
-  "Ami shunte chai tomar version! 💬",
-  "Tumi ki eta expect korechile? 🤔",
-  "Eita ki tomar first experience? 😯",
-  "Aro age theke bolo! 📖",
-  "Hmm, eta ekta kotha! 😌",
-  "Bujhlam, kintu aro jante chai! 👀",
-  "Tomar kotha shune valo lagche! 💗",
-  "Ami ki thik dhorechi? 🤓",
-  "Ektu vul hole thik kore dio! 😅",
-  "Ami to puro golper moddhe dhuke gechi! 😂",
-  "Eita kintu darun twist! 🤯",
-  "Tarpor ki surprise chilo? 🎁",
-  "Accha, shesh porjonto ki holo? 😁",
-  "Tumi ki khushi hoyechile? 🥰",
-  "Eita tomar jonno kemon chilo? 💭",
-  "Besh, tomar kotha mone rakhbo! ❤️",
-  "Ami tomar sathe ekmot hote pari! 🤝",
-  "Kothata ektu vabte hobe! 🤔",
-  "Oho, ki obostha! 😳",
-  "Eita shune amar chokh boro hoye gelo! 😲",
-  "Ami ki aro ekta proshno korte pari? 🙋",
-  "Tomar kache shobcheye moja konta? 😄",
-  "Ektu funny kichu bolo! 😂",
-  "Ajke ki kono notun khobor ache? 📰",
-  "Ami kintu curious hoye gelam! 👀",
-  "Tumi ki amake purota bolbe? 🥺",
-  "Ektu break niye abar bolo! ☕",
-  "Besh, golpo ta choluk! 📖",
-  "Ami shunte shunte ready! 😊",
-  "Eita niye tomar feeling ki? 💗",
-  "Tomar kotha amar bhalo laglo! ❤️",
-  "Aro ektu explain koro! 🤔",
-  "O achha, eta age jantam na! 😮",
-  "Besh, notun kichu shikhlam! 📚",
-  "Tumi ki aro kichu jano? 🧐",
-  "Ektu amakeo shikhao! 🥰",
-  "Hmm, eta khub interesting! ✨",
-  "Ami kintu shob bujhte chai! 👀",
-  "Tomar kotha sesh hoyeche? 🤔",
-  "Aro ekta part baki ache mone hoy! 📖",
-  "Bolo, ami ready! 😁",
-  "Ektu moja kore bolo na! 😜",
-  "Hehe, tomar logic ta alada! 😂",
-  "Tumi ki shobshomoy emon? 😏",
-  "Ajke tomar energy besh! ⚡",
-  "Ektu chup kore achho keno? 🥺",
-  "Kotha bolo, adda jomai! 💬",
-  "Tomar sathe ekta game kheli? 🎮",
-  "Accha, ekta moja proshno kori! 😁",
-  "Tumi ki guess korte parbe? 🤔",
-  "Besh, dekhi ki bolo! 👀",
-  "Ami kintu answer er opekkhay! 💌",
-  "Eita shune hashi chole elo! 😂",
-  "Oho, besh smart answer! 😎",
-  "Tomar uttor ta valo chilo! 👍",
-  "Abar bolo, shunte miss korechi! 🥺",
-  "Ektu clear kore bolbe? 🤔",
-  "Bujhlam, thanks bolar jonno! 😊",
-  "Tumi kotha bolle bhalo lage! ❤️",
-  "Ami tomar golpo pochondo kori! 🥰",
-  "Besh, aro bolo! 💗",
-  "Eita niye ki vabcho? 💭",
-  "Tomar mathay darun idea ashe! 💡",
-  "Ektu notun kichu try koro! 😁",
-  "Ami tomar kotha bujhar cheshta korchi! 🫶",
-  "O achha, tai hoyeche! 😮",
-  "Besh, eta to valo khobor! 🎉",
-  "Ki darun bepar! 🤩",
-  "Ektu details dile aro bujhtam! 🧐",
-  "Ami ki ekta suggestion dite pari? 💡",
-  "Tumi chaile amar sathe discuss korte paro! 💬",
-  "Besh, tomar kotha shunlam! 😊",
-  "Aro kichu bolar thakle bolo! ❤️",
-  "Tomar din ta kemon katlo? 🌸",
-  "Ajke ki kheyecho? 🍕",
-  "Ekhon ki korcho? 😁",
-  "Ki niye busy acho? 💻",
-  "Shobai kemon ache? 🥰",
-  "Tomar okhane shob thik ache? 🌼",
-  "Ektu rest nichho naki? 😴",
-  "Ajke ghum kemon holo? 🌙",
-  "Aajker weather kemon? ☀️",
-  "Tumi ki ber hoyechile? 🚶",
-  "Kothay ghurte jete valo lage? 🌍",
-  "Tomar pochonder jayga konta? 🏞️",
-  "Ektu gaan shono naki? 🎵",
-  "Tomar favorite gaan ki? 🎧",
-  "Movie dekho naki? 🎬",
-  "Kon dhoroner movie pochondo? 🍿",
-  "Game khelo naki? 🎮",
-  "Tomar favorite game konta? 🕹️",
-  "Porashona kemon cholche? 📚",
-  "Kajer obostha ki? 💻",
-  "Ajke notun kichu korle? ✨",
-  "Weekend er plan ache? 🎉",
-  "Cholo kichu golpo kori! 💬",
-  "Ami ekta moja kotha boli? 😜",
-  "Shunte chao ekta funny story? 😂",
-  "Tomar sense of humor bhalo! 😎",
-  "Tumi besh moja korte paro! 🤣",
-  "Ektu hashi-thattay din katuk! 😁",
-  "Mon kharap holeo kotha bolo! 🫶",
-  "Ami tomar kotha shunte pari! ❤️",
-  "Jodi kichu bolte chao bolo! 💗",
-  "Chinta koro na, golpo kori! 😊",
-  "Ektu halka howa jak! 🌸",
-  "Tomar kotha amar kache important! 💖",
-  "Ami bujhte chai tumi ki bolcho! 👂",
-  "Tumi ki kichu niye chintay acho? 🤔",
-  "Kono problem hole bolte paro! 🫶",
-  "Ami judge korbo na, bolo! ❤️",
-  "Ektu shanti kore bolo! 😌",
-  "Besh, ami bujhar cheshta korchi! 😊",
-  "Tumi chaile topic change korte pari! 🔄",
-  "Cholo onno kichu niye kotha boli! 💬",
-  "Ektu hasir golpo shunbe? 😂",
-  "Ajke tomar mood ta alada lagche! 👀",
-  "Ki hoyeche, eto chup keno? 🥺",
-  "Bolo na, ki vabcho? 💭",
-  "Tomar kotha shune valo laglo re! 💗",
-  "Ami ekhane achi, bolo! 🫶",
-  "Aro kotha bolo, bhalo lagche! ❤️",
-  "Eita niye tomar plan ki? 🧐",
-  "Tumi ki nijer decision niye khushi? 😊",
-  "Besh, tomar choice ta sundor! 😍",
-  "Ami holeo emon kortam hoyto! 😅",
-  "Eita ekdom unexpected chilo! 😲",
-  "Aro kichu janar ache amar! 👀",
-  "Ektu golper moto kore bolo! 📖",
-  "Tumi ki shob detail mone rekhecho? 🤔",
-  "Oho, puro cinema hoye geche! 🎬",
-  "Eita shune ami hashlam! 😂",
-  "Tomar kotha besh moja! 😁",
-  "Ami to vabchilam onno kichu! 😅",
-  "Besh, ekhon bujhte parchi! 😊",
-  "Accha, tarpor ki korar iccha? 🤔",
-  "Tumi ki eta abar korbe? 👀",
-  "Eita tomar jonno notun chilo? 😮",
-  "Tomar experience share korar jonno thanks! 💗",
-  "Aro emon kichu hole bolo! 🥰",
-  "Ami shob shunte chai! 👂",
-  "Kotha ta ekdom unexpected! 😳",
-  "Ektu aro interesting kore bolo! 😜",
-  "Tomar golper ending ki? 📖",
-  "Ami to ending er jonno wait korchi! 😁",
-  "Besh, ebar amar pala! 😎",
-  "Ami ekta kotha boli shono! 💬",
-  "Tumi age bolo, ami pore bolchi! 😊",
-  "Ami tomar kotha kete dicchi na! 🤐",
-  "Ektu dhorjo dhoro, bujhe nicchi! 😅",
-  "Tomar kotha amar mathay dhukche! 🤓",
-  "Aha, ekhon puro clear! 💡",
-  "Bujhlam, ar kichu? 👀",
-  "Eita niye aro alochona kora jay! 💬",
-  "Tumi ki onno kichu vabcho? 🤔",
-  "Ami tomar sathe adda dite chai! ❤️",
-  "Ajke onek kotha hobe mone hocche! 😁",
-  "Ektu cha niye bosle valo hoto! ☕",
-  "Golpo korte korte raat hoye jabe! 🌙",
-  "Tumi kotha bolle ami shuni! 🥰",
-  "Ami kintu ready achi! ✨",
-  "Besh, shuru koro! 😄",
-  "Ki niye shuru korbo bolo? 💬",
-  "Tumi topic choose koro! 😎",
-  "Ami random kichu jiggesh kori? 🤔",
-  "Tomar jiboner funny moment konta? 😂",
-  "Shobcheye moja ghotona konta? 😆",
-  "Kokhono emon hoyeche age? 👀",
-  "Eita mone porle ekhono hasho? 🤣",
-  "Tumi ki tokhon obak hoyechile? 😲",
-  "Tarpor ki reaction diyechile? 😁",
-  "Ami hole chup hoye jetam! 😅",
-  "Besh, tomar golpo ta alada! ✨",
-  "Eita shune amar interest bere gelo! 👀",
-  "Aro bolo, ami shunchi! ❤️",
-  "Ektu notun update dao! 📰",
-  "Ki cholche ajkal? 😊",
-  "Onek din por kotha hocche! 🥰",
-  "Tomar notun khobor ki? 💬",
-  "Shob kichu kemon jacche? 🌸",
-  "Ajke ki special kichu? 🎉",
-  "Kono exciting news ache? 🤩",
-  "Tomar plan gulo ki thik ache? 🧐",
-  "Ektu nijer update dao! 💗",
-  "Besh, shob thik thakuk! ❤️",
-  "Tomar jonno shubhokamna! 🌹",
-  "Eita valo lagar moto khobor! 😍",
-  "Shune khushi holam! 🥰",
-  "Aro valo kichu hok tomar! ✨",
-  "Darun! Egiye jao! 💪",
-  "Tumi parbe, chinta nei! 💖",
-  "Besh confidence niye bolo! 😎",
-  "Tomar kotha te positivity ache! 🌈",
-  "Ektu positive thako! 😊",
-  "Shob kichu aste aste thik hoy! 🫶",
-  "Kotha bolte thako, valo lagche! ❤️",
-  "Tomar sathe kotha sesh korte iccha kore na! 💗",
-  "Ami ki aro kichu shunte pari? 👂",
-  "Eita niye abar kotha hobe! 😁",
-  "Besh, ajker moto darun adda! 🥰",
-  "Ektu pore abar golpo hobe! 🌸",
-  "Tumi abar notun golpo niye ashbe! 📖",
-  "Ami kintu opekkha korbo! 💌",
-  "Hehe, besh moja holo! 😂",
-  "Tomar kotha shune din ta valo holo! ❤️",
-  "Ektu hashi diye jao! 😁",
-  "Abar dekha hobe kothay! 👋",
-  "Cholo, golpo choltei thakuk! 💬",
-  "Ami ekhono curious! 👀",
-  "Tumi ki aro kichu bolbe? 🥺",
-  "Ektu hint diye rakho! 🤫",
-  "Besh, eta mone rakhbo! 📝",
-  "Ami tomar kotha appreciate kori! 💖",
-  "Eita khub sundor vabe bolle! 🌹",
-  "Tomar expression ta darun! 😍",
-  "Kothar moddhe moja ache! 😂",
-  "Ektu aro bolo, please! 🥰",
-  "Ami mon diye shunte chai! ❤️",
-  "Ekhon amar ki bola uchit bujhte parchi na! 😅",
-  "Hmm, kotha ta vabacche! 💭",
-  "Ami ekmot hote pari! 🤝",
-  "Eita niye tomar sathe kotha bolte valo lagbe! 💬",
-  "Besh, tomar logic ache! 🤓",
-  "Ektu onno angle theke dekhi! 🔍",
-  "Tumi ki amar sathe discuss korbe? 🧐",
-  "Eita niye tomar kono doubt ache? 🤔",
-  "Ami ki kichu vul bujhlam? 😅",
-  "Tumi chaile abar explain koro! 😊",
-  "Besh, ekhon clear hoyeche! 💡",
-  "Ektu aro simple kore bolo! 🥺",
-  "Ami shob bujhte chai! 👀",
-  "Tomar kotha theke onek kichu shikhi! 📚",
-  "Aajke notun kichu janlam! ✨",
-  "Besh, eta valo point! 👍",
-  "Aro emon kotha bolo! 💗",
-  "Tumi kintu interesting manus! 😎",
-  "Tomar sathe kotha bole moja pai! ❤️",
-  "Ektu hashi-thattay din katuk! 😂",
-  "Ki bolo, thik na? 😁",
-  "Ami ki thik bollam? 🤔",
-  "Tomar ki mone hoy? 💭",
-  "Tumi hole ki korte? 🧐",
-  "Ektu nijer opinion dao! 💬",
-  "Ami tomar answer er opekkhay! 💌",
-  "Besh, dekhi ki hoy! 👀",
-  "Oho, ki darun! 🤩",
-  "Eita to vabini! 😲",
-  "Ami ekdom surprise! 😳",
-  "Tomar kotha shune matha ghurchhe! 🤯",
-  "Ektu aste bolo, bujhi! 😅",
-  "Hehe, moja peye gelam! 😂",
-  "Tumi ajke full mood e acho! 😎",
-  "Besh, ami impressed! ✨",
-  "Eita kintu valo chilo! 👍",
-  "Tomar kotha shune mon valo holo! 🥰",
-  "Aro kichu moja kotha bolo! 😜",
-  "Cholo, ektu adda dei! 💬",
-  "Ami ready, tumi bolo! 😊",
-  "Ektu golpo shuru koro! 📖",
-  "Kotha bolte kono topic lage naki! 😁",
-  "Ja mone ashe tai bolo! ❤️",
-  "Ami shunchi, tension nei! 🫶",
-  "Tomar kotha amar kache safe! 💗",
-  "Ektu moner kotha bolo! 🌸",
-  "Bolo, ki share korte chao? 💬",
-  "Ami bujhte cheshta korbo! 😊",
-  "Tumi nijer moto kore bolo! 🥰",
-  "Kono tarahuro nei! 😌",
-  "Dhire susthe bolo! 🌷",
-  "Besh, shomoy niye bolo! ❤️",
-  "Ami ekhanei achi! 🫶",
-  "Tomar kotha sesh hole amake bolo! 😊",
-  "Ektu aro shuni! 👂",
-  "Ami to ekhono opekkha korchi! 💌",
-  "Bolo, ami ready! 😁",
-  "Accha, tarpor ki holo bolo! 👀",
-  "Eita shune amar aro jante iccha korche! 🥺",
-  "Tomar golpo ta besh moja! 😂",
-  "Aro ekta golpo ache naki? 📖",
-  "Tumi ki shobshomoy emon golpo bolo? 😄",
-  "Eita kintu bhalo twist! 🤯",
-  "Ami to ending miss korte chai na! 😁",
-  "Shob detail bolo, kichu bad dio na! 👀",
-  "Besh, ekhon porer ghotona! ✨",
-  "Ami puro golpo ta imagine korchi! 💭",
-  "Oho, ki obostha chilo tokhon! 😲",
-  "Tumi tokhon ki korle? 🤔",
-  "Tarpor shobai ki bollo? 😆",
-  "Eita ki tomar bondhuder sathe hoyeche? 👫",
-  "Tomar reaction ta jante chai! 👀",
-  "Besh, bujhlam! 😊",
-  "Hmm, valo kotha! 😌",
-  "Accha, thik ache! 👍",
-  "O achha, tai bujhi! 😄",
-  "Hehe, bujhechi! 😂",
-  "Aha, darun! 🤩",
-  "Bah, besh! 👏",
-  "Oho, tai naki! 😮",
-  "Sotti bolcho? 🧐",
-  "Eita abar ki! 😅",
-  "Ki je bolo! 🤭",
-  "Besh moja! 😁",
-  "Ami shunchi! 👂",
-  "Bolo aro! 💬",
-  "Tarpor? 👀",
-  "Ektu details! 🥺",
-  "Aro bolo na! 💗",
-  "Hmm, interesting! ✨",
-  "Bujhlam mone hoy! 😊",
-  "Ektu vabchi! 🤔",
-  "Eta valo laglo! ❤️",
-  "Khub sundor! 🌹",
-  "Darun bepar! 😍",
-  "Ami obak! 😲",
-  "Hehe, nice! 😎",
-  "Oho, wow! 🤩",
-  "Besh to! 😁",
-  "Aro kichu? 👀",
-  "Ki holo pore? 🤔",
-  "Tumi bolo! 💬",
-  "Ami achi! 🫶",
-  "Shunte chai! ❤️",
-  "Bolo, bolo! 😄",
-  "Ektu share koro! 💗",
-  "Khub interesting! ✨",
-  "Besh bhalo! 😊",
-  "Aha, bujhlam! 😌",
-  "Eita notun! 😮",
-  "Ami jantam na! 🤓",
-  "Shotti moja! 😂",
-  "Kotha ta valo! ❤️",
-  "Aro jante chai! 👀",
-  "Ki darun! 🤩",
-  "Ektu bolo toh! 🥺",
-  "Tomar ki mone hoy? 🤔",
-  "Tarpor ki plan? 🧐",
-  "Besh, choluk! 😁",
-  "Golpo jomche! 🔥",
-  "Ami curious! 👀",
-  "Hehe, thik ache! 😂",
-  "Accha, shuni! 👂",
-  "Bolo, ki khobor? 😊",
-  "Ajke ki obostha? 🌸",
-  "Shob thik ache toh? 💗",
-  "Notun ki cholche? 😁",
-  "Ki niye busy? 💻",
-  "Ektu golpo hobe? 🥰",
-  "Tomar din kemon? ☀️",
-  "Aajke moja hoyeche? 😂",
-  "Ki korar plan? 🤔",
-  "Kemon acho bolo? ❤️",
-  "Bhalo lagche kotha bole! 🥰",
-  "Tomar sathe adda jome! 💬",
-  "Ektu aro kotha hok! 💗",
-  "Ami ekhane achi! 🫶",
-  "Cholo kotha boli! 😊",
-  "Ektu moja kori! 😜",
-  "Tomar golpo shuni! 📖",
-  "Ami ready achi! 😎",
-  "Aro kichu bolo! 👀",
-  "Besh, shunte valo lagche! ❤️",
-  "Eita khub interesting! ✨",
-  "Tumi ki vabcho? 💭",
-  "Ektu amake bolo! 🥺",
-  "Kotha ta bujhte chai! 🤔",
-  "Ami tomar kotha shunchi! 👂",
-  "Besh, tarpor bolo! 😁",
-  "Ektu aro details dao! 📝",
-  "Tomar opinion ki? 💬",
-  "Ami ki jiggesh korte pari? 🙋",
-  "Eita keno holo? 🤨",
-  "Tarpor ki korle? 👀",
-  "Tomar ki valo legeche? 🥰",
-  "Abar emon hobe naki? 😄",
-  "Besh, bujhte parlam! 😊",
-  "Ami ekmot! 🤝",
-  "Kotha ta thik! 👍",
-  "Eita niye vabbo! 💭",
-  "Besh, valo idea! 💡",
-  "Tomar idea ta darun! 🤩",
-  "Aro notun idea ache? 👀",
-  "Tumi ki try korecho? 🧐",
-  "Kemon experience holo? 😊",
-  "Ektu share koro! 💗",
-  "Besh, thanks! 🙏",
-  "Tomar kotha valo laglo! ❤️",
-  "Ami appreciate korchi! 🥰",
-  "Aro bolo, please! 🥺",
-  "Golpo bondho koro na! 😂",
-  "Ami ekhono shunchi! 👂",
-  "Ektu hashi dao! 😁",
-  "Hehe, moja laglo! 🤣",
-  "Tumi onek funny! 😜",
-  "Ami hashi thamate parchi na! 😂",
-  "Eita besh chilo! 😎",
-  "Oho, funny bepar! 🤭",
-  "Tumi moja korte jano! 😆",
-  "Aro funny kichu bolo! 😂",
-  "Ektu moja hok! 🎉",
-  "Besh, darun! 🤩",
-  "Ami obak hoye gelam! 😲",
-  "Eta ki asholei? 😳",
-  "Sotti naki! 👀",
-  "Ami bishash korte parchi na! 😮",
-  "Oho, unexpected! 🤯",
-  "Eita to vabini! 😅",
-  "Ki je holo! 😵",
-  "Besh surprise! 🎁",
-  "Ektu shock khelam! 😳",
-  "Aro bolo, ki holo? 👂",
-  "Tomar kotha shune valo laglo! ❤️",
-  "Mon ta valo hoye gelo! 🥰",
-  "Ektu hashi mukhe thako! 😊",
-  "Shob thik hoye jabe! 🌈",
-  "Bolo, ki mone hocche? 💭",
-  "Ami shunte chai! 🫶",
-  "Tumi eka na, golpo koro! ❤️",
-  "Ektu mon halka koro! 🌸",
-  "Ja mone ache bolo! 💬",
-  "Ami judge korbo na! 🤗",
-  "Besh, ami bujhlam! 😊",
-  "Ektu shomoy niye bolo! 🕰️",
-  "Aro kichu share koro! 💗",
-  "Tomar kotha important! ❤️",
-  "Ami mon diye shunchi! 👂",
-  "Tumi chaile bolte paro! 🥰",
-  "Kono pressure nei! 😌",
-  "Dhire dhire bolo! 🌷",
-  "Besh, ami achi! 🫶",
-  "Aro kichu janate chao? 👀",
-  "Ami tomar kotha bujhte chai! 💬",
-  "Ektu clear kore bolo! 🤔",
-  "Bujhlam, thanks! 😊",
-  "Accha, tarpor ki? 😁",
-  "O achha, valo! 🌸",
-  "Besh, tahole choluk! 🎉",
-  "Ami tomar sathe achi! ❤️",
-  "Kotha bolte thako! 💗",
-  "Tomar golpo shunte chai! 👂",
-  "Aro ekta kotha bolo! 💬",
-  "Ektu notun kichu bolo! ✨",
-  "Ajke ki plan? 🧐",
-  "Ki niye vabcho? 💭",
-  "Tomar mood kemon? 😊",
-  "Ami ki thik bujhechi? 🤔",
-  "Ektu hint dao! 🤫",
-  "Besh, dekhi! 👀",
-  "Aro details chai! 📝",
-  "Eita darun chilo! 😍",
-  "Tomar kotha alada! 😎",
-  "Ami impressed! 🤩",
-  "Hehe, besh! 😂",
-  "Oho, shundor! 🌹",
-  "Bhalo laglo shune! ❤️",
-  "Ektu aro bolo! 🥺",
-  "Ami wait korchi! 💌",
-  "Bolo na, shuni! 👂",
-  "Tomar kotha choluk! 💬",
-  "Ami ready! 😁",
-  "Golpo shuru hok! 📖",
-  "Ektu adda dei! 🥰",
-  "Kotha bolte valo lage! ❤️",
-  "Aro golpo ache? 👀",
-  "Ki khobor tomar? 😊",
-  "Shob kemon jacche? 🌸",
-  "Besh, valo thako! 💗",
-  "Abar kotha hobe! 👋",
-  "Eita mone thakbe! 📝",
-  "Aro emon kotha bolo! 😍",
-  "Tomar kotha darun! ✨",
-  "Besh, ami shunlam! 👂",
-  "Ami bujhte parchi! 😊",
-  "Ektu aro bujhao! 🤔",
-  "Tumi ki bolte chao? 💬",
-  "Ami ki kichu miss korchi? 🧐",
-  "Ektu abar bolo! 🥺",
-  "Besh, ekhon bujhlam! 💡",
-  "Aro kichu ache? 👀",
-  "Tomar ki mone hoy eta? 💭",
-  "Ami tomar motamot chai! ❤️",
-  "Ektu nijer kotha bolo! 🥰",
-  "Tomar pochondo ki? 🌷",
-  "Ki korte valo lage? 😁",
-  "Kothay ghurte iccha kore? 🏞️",
-  "Kon jinis ta beshi pochondo? 💖",
-  "Ajke ki shikhecho? 📚",
-  "Notun kichu try korcho? ✨",
-  "Ektu update dao! 📰",
-  "Besh, valo khobor! 🎉",
-  "Darun, shune khushi holam! 😍",
-  "Tomar jonno bhalo laglo! ❤️",
-  "Egiye jao, parbe! 💪",
-  "Ami support korchi! 🫶",
-  "Bhalo kichu hok! 🌈",
-  "Ektu positive thako! 😊",
-  "Shob thik hoye jabe! ❤️",
-  "Ami tomar kotha shunte chai! 👂",
-  "Aro bolo, moja lagche! 🥰",
-  "Hehe, tumi na! 😂",
-  "Ki je bolo tumi! 🤭",
-  "Eita abar ki holo! 😅",
-  "Besh funny! 🤣",
-  "Ami to hashlam! 😂",
-  "Ektu moja pelam! 😜",
-  "Aro ekta joke bolo! 😁",
-  "Tumi kintu alada! 😎",
-  "Tomar style bhalo! ✨",
-  "Kotha ta besh! 😊",
-  "Ami vabchi! 💭",
-  "Hmm, thik ache! 😌",
-  "Accha, bujhlam! 👍",
-  "Oho, valo! 😍",
-  "Besh, cholbe! 😁",
-  "Aro shuni! 👂",
-  "Bolo, ami achi! 🫶",
-  "Ektu golpo hok! 💬",
-  "Kotha choluk! ❤️",
-  "Ami shunchi! 😊",
-  "Tarpor bolo! 👀",
-  "Aro details bolo! 📝",
-  "Ki holo pore? 🤔",
-  "Tomar reaction ki chilo? 😯",
-  "Tumi ki khushi? 🥰",
-  "Eita ki valo laglo? ❤️",
-  "Abar korbe naki? 😄",
-  "Besh, interesting! ✨",
-  "Ami jante chai! 👀",
-  "Ektu share koro! 💗",
-  "Tomar golpo darun! 📖",
-  "Ami curious hoye gelam! 🤓",
-  "Ektu aro bolo! 🥺",
-  "Besh, shunte chai! 👂",
-  "Ami ekhanei achi! ❤️",
-  "Bolo, ki obostha? 😊",
-  "Ajke kemon jacche? ☀️",
-  "Notun ki khobor? 📰",
-  "Shob bhalo toh? 🌸",
-  "Kichu interesting ache? 👀",
-  "Cholo adda dei! 💬",
-  "Ami ready achi! 😎",
-  "Tomar kotha shuni! ❤️",
-  "Ektu hashi dao! 😁",
-  "Hehe, valo! 😂",
-  "Oho, darun! 🤩",
-  "Aha, sundor! 🌹",
-  "Besh moja! 😆",
-  "Sotti naki? 😳",
-  "Tai bujhi! 😄",
-  "Eita notun! ✨",
-  "Ami jantam na! 🤓",
-  "Bujhlam mone hoy! 😊",
-  "Ektu vabte dao! 💭",
-  "Kotha ta interesting! 👀",
-  "Tomar opinion bolo! 💬",
-  "Ami ki bolbo! 😅",
-  "Ektu confused holam! 🤔",
-  "Abar bujhiye bolo! 🥺",
-  "Besh, ekhon clear! 💡",
-  "Aro kichu jante chai! 👀",
-  "Tomar kotha shundor! ❤️",
-  "Ami mon diye shunchi! 🫶",
-  "Tumi bolte thako! 💗",
-  "Golpo shesh koro na! 😂",
-  "Aro ekta part chai! 📖",
-  "Eita ki shesh? 🤨",
-  "Tarpor ki holo bolo! 👀",
-  "Ami wait korchi! 💌",
-  "Besh, shob bolo! 😊",
-  "Ektu moja koro! 😜",
-  "Tomar sathe adda valo! 🥰",
-  "Ami bored na! 😎",
-  "Kotha cholte thakuk! 💬",
-  "Aro golpo hok! ❤️",
-  "Ajke onek kotha hobe! 😁",
-  "Tumi topic dao! 💡",
-  "Ami topic dhori? 🤔",
-  "Ekta proshno kori? 🙋",
-  "Tumi answer dibe? 🥺",
-  "Besh, shuru kori! 🎉",
-  "Ami ekta guess kori! 😏",
-  "Dekhi tomar answer! 👀",
-  "Ektu interesting kichu bolo! ✨",
-  "Tomar favorite ki? 💖",
-  "Ki korte pochondo? 😊",
-  "Tomar dream ki? 🌈",
-  "Kothay jete chao? ✈️",
-  "Ajke ki korte iccha? 😁",
-  "Ektu nijer kotha bolo! 💗",
-  "Besh, shunte valo laglo! ❤️",
-  "Aro share koro! 🫶",
-  "Ami appreciate kori! 🌹",
-  "Tomar kotha important! 💖",
-  "Ektu mon khule bolo! 🥰",
-  "Ami achi, chinta nei! 🤗",
-  "Bolo, ki hoyeche? 🥺",
-  "Ektu bujhiye bolo! 💬",
-  "Ami bujhar cheshta korchi! 😊",
-  "Besh, dhonnobad! 🙏",
-  "Abar kotha hobe! 👋",
-  "Ektu pore abar ashbe! 💌",
-  "Tomar jonno opekkha korbo! ❤️",
-  "Aajker adda valo laglo! 🥰",
-  "Besh, valo theko! 🌸",
-  "Ektu hashi niye thako! 😁",
-  "Aro valo kichu hok! ✨",
-  "Tomar din sundor katuk! 🌷",
-  "Ami tomar kotha mone rakhbo! 💗",
-  "Besh, eta darun! 🤩",
-  "Oho, besh interesting! 👀",
-  "Ami aro jante chai! 🧐",
-  "Bolo, ki vabcho? 💭",
-  "Tomar ki mone hocche? 🤔",
-  "Ektu details dao! 📝",
-  "Ami ki thik bollam? 😅",
-  "Tumi ki ekmot? 🤝",
-  "Ektu onno kotha boli? 💬",
-  "Cholo topic change kori! 🔄",
-  "Ami ekta moja kotha boli! 😂",
-  "Shunte chao? 👂",
-  "Besh, bolo! 😊",
-  "Ami ready! 😎",
-  "Golpo choluk! 📖",
-  "Tomar kotha shunte chai! ❤️",
-  "Aro kichu bolo! 💗",
-  "Hehe, besh moja! 🤣",
-  "Eita to darun! 😍",
-  "Ami obak! 😲",
-  "Ki sundor! 🌹",
-  "Besh bhalo! 🥰",
-  "Aha, tai naki! 😯",
-  "O achha! 😊",
-  "Hmm, bujhlam! 😌",
-  "Accha, tarpor? 👀",
-  "Bolo aro! 💬",
-  "Ami shunchi! 👂",
-  "Tumi bolo! 🫶",
-  "Ektu share koro! 💗",
-  "Aro details chai! 📝",
-  "Bujhte parchi! 😊",
-  "Eita valo! ❤️",
-  "Darun idea! 💡",
-  "Besh interesting! ✨",
-  "Kotha ta thik! 👍",
-  "Ami vabchi! 💭",
-  "Ektu wait! ⏳",
-  "Abar bolo! 🥺",
-  "Ki holo? 🤔",
-  "Tarpor ki? 👀",
-  "Aro bolo na! 💕",
-  "Tomar kotha valo lage! 🥰",
-  "Ami ekhane achi! ❤️",
-  "Cholo golpo kori! 💬",
-  "Ektu adda hok! 😁",
-  "Ami ready shunte! 👂",
-  "Besh, choluk! 🎉",
-  "Kotha bondho koro na! 😂",
-  "Aro golpo chai! 📖",
-  "Ajke ki khobor? 📰",
-  "Shob thik ache? 😊",
-  "Kemon acho? 💗",
-  "Ki korcho? 👀",
-  "Din kemon gelo? 🌸",
-  "Notun ki? ✨",
-  "Kichu bolo! 🥺",
-  "Ami curious! 🤓",
-  "Eita ki holo! 😲",
-  "Sotti bolcho? 😳",
-  "Besh moja holo! 😂",
-  "Hehe, valo! 😁",
-  "Oho, wow! 🤩",
-  "Ami impressed! 😎",
-  "Ektu hashi dao! 😊",
-  "Tomar mood valo? 🥰",
-  "Aro kotha hobe? 💬",
-  "Besh, valo laglo! ❤️",
-  "Ami shune khushi! 🌷",
-  "Tomar golpo sundor! 📖",
-  "Ektu aro explain koro! 🤔",
-  "Ami bujhte chai! 👀",
-  "Tumi ki bolbe? 💬",
-  "Aro kichu ache? 🧐",
-  "Bolo, ami achi! 🫶",
-  "Ektu moja kori! 😜",
-  "Tomar sathe kotha jome! 💗",
-  "Ami shunte pochondo kori! ❤️",
-  "Besh, tomar kotha thik! 👍",
-  "Eita mone rakhar moto! 📝",
-  "Ami eta vabini! 😮",
-  "Besh unexpected! 🤯",
-  "Ki darun bepar! 🤩",
-  "Ektu aro jani! 👀",
-  "Tomar experience bolo! 💬",
-  "Abar emon kichu hole janio! 😊",
-  "Besh, ajker moto! 🌸",
-  "Abar dekha hobe! 👋",
-  "Kotha hobe abar! 💌",
-  "Valo theko! ❤️",
-  "Hashikhushi theko! 😁",
-  "Ami ekhanei thakbo! 🫶",
-  "Bolo, porer kotha! 👀",
-  "Aro ektu shuni! 👂",
-  "Golpo ta choluk! 📖",
-  "Tomar kotha sesh? 🤔",
-  "Ami ekhono shunchi! 💗",
-  "Besh, aro bolo! 😊",
-  "Accha, ekhon bujhlam! 💡",
-  "Hmm, valo point! 👍",
-  "Oho, notun kotha! 😮",
-  "Ami jante agrohi! 🤓",
-  "Ektu details bolo toh! 📝",
-  "Tomar uttor ta ki? 👀",
-  "Ami ki jiggesh korbo? 🙋",
-  "Tumi age bolo! 💬",
-  "Ami pore bolchi! 😁",
-  "Besh, tomar pala! 🎤",
-  "Ektu moja hok! 😂",
-  "Hehe, tumi darun! 😍",
-  "Tomar kotha alada rokom! ✨",
-  "Ami hashi thamate parchi na! 🤣",
-  "Besh, interesting chilo! 🤩",
-  "Aro emon kotha chai! 💗",
-  "Cholo kotha barai! 💬",
-  "Ami tomar sathe achi! 🫶",
-  "Ektu golpo shuru kori! 📖",
-  "Tumi topic bolo! 😊",
-  "Ami shunte ready! 👂",
-  "Aro kichu share koro! ❤️",
-  "Besh, shob thik! 🌸",
-  "Tomar din valo katuk! ☀️",
-  "Ektu relax koro! 😌",
-  "Ami ekhane achi, bolo! 💗",
-  "Kichu mone korona, jiggesh kori? 🙈",
-  "Eita niye tomar vabna ki? 💭",
-  "Ami tomar opinion shunte chai! 👂",
-  "Besh, bujhe nilam! 😊",
-  "Ektu aro clear holo! 💡",
-  "Tomar kotha amar valo laglo! ❤️",
-  "Aro bolo, ami achi! 🫶",
-  "Hehe, darun! 😂",
-  "Oho, shundor! 🌹",
-  "Besh, eta valo! 👍",
-  "Ami shunchi mon diye! 💗",
-  "Tomar golpo cholte dao! 📖",
-  "Ektu aro bolo na! 🥺",
-  "Ami curious hoye achi! 👀",
-  "Ki holo tarpor? 🤔",
-  "Aro kichu janar ache! 🧐",
-  "Tumi bolle valo lage! 🥰",
-  "Besh, shunte thaki! 😊",
-  "Accha, thik ache! 😌",
-  "Hmm, tai naki! 😯",
-  "O achha, bujhlam! 💡",
-  "Eita kintu notun! ✨",
-  "Ami obak hoyechi! 😲",
-  "Besh moja laglo! 😂",
-  "Ektu hashi pelam! 😁",
-  "Tumi kintu funny! 🤣",
-  "Aro ekta kotha bolo! 💬",
-  "Cholo, golpo kori! ❤️",
-  "Ami ready achi! 😎",
-  "Bolo, ki khobor? 😊",
-  "Ajke ki cholche? 👀",
-  "Tomar ki update? 📰",
-  "Shob bhalo toh? 🌸",
-  "Kichu interesting hoyeche? 🤩",
-  "Ektu nijer kotha bolo! 💗",
-  "Ami shunte chai! 👂",
-  "Besh, aro bolo! 🥰",
-  "Eita valo laglo! ❤️",
-  "Tomar kotha sundor! 🌹",
-  "Ami bujhte parchi! 😊",
-  "Ektu aro bujhao! 🤔",
-  "Ami ki thik bujhlam? 🧐",
-  "Besh, ekhon clear! 💡",
-  "Aro kichu ache naki? 👀",
-  "Tomar motamot ki? 💬",
-  "Tumi ki mone koro? 💭",
-  "Ami ekta proshno kori? 🙋",
-  "Tumi answer dibe? 🥺",
-  "Besh, shuru hok! 🎉",
-  "Ektu moja kori! 😜",
-  "Ami ekta joke boli? 😂",
-  "Shunte chao naki? 👂",
-  "Hehe, moja hobe! 🤭",
-  "Tomar sathe adda jome! ❤️",
-  "Kotha bolte valo lage! 🥰",
-  "Aro golpo chai! 📖",
-  "Ami ekhanei achi! 🫶",
-  "Bolo, theme gele keno? 😁",
-  "Aro kichu bolo! 💗",
-  "Ektu details dao! 📝",
-  "Tarpor ki korle? 👀",
-  "Tomar reaction ki chilo? 😲",
-  "Eita kemon laglo? 😊",
-  "Besh, darun! 🤩",
-  "Oho, unexpected! 😳",
-  "Sotti naki! 😮",
-  "Ami vabini! 🤯",
-  "Ki je bolo! 😂",
-  "Bujhlam, thik ache! 👍",
-  "Ami shunchi! 👂",
-  "Bolo aro! 💬",
-  "Ektu share koro! ❤️",
-  "Tomar kotha mone thakbe! 📝",
-  "Aro kotha hobe! 💌",
-  "Besh, valo theko! 🌷",
-  "Ektu hashi niye thako! 😊",
-  "Tomar jonno shubhokamna! 🌹",
-  "Aro valo kichu hok! ✨",
-  "Ami tomar sathe achi! 🫶",
-  "Golpo choluk! 💗",
-  "Ektu adda hok! 😁",
-  "Tomar kotha shunte valo lage! ❤️",
-  "Bolo, ami achi! 😊",
-  "Aro bolo na! 🥺",
-  "Hehe, besh moja! 😂",
-  "Oho, darun! 🤩",
-  "Besh interesting! ✨",
-  "Ami curious! 👀",
-  "Eita shune valo laglo! 🥰",
-  "Ami bujhte parchi! 💡",
-  "Aro kichu bolo! 💬",
-  "Ektu details dao! 📝",
-  "Tomar ki mone hoy? 🤔",
-  "Besh, thik ache! 😊",
-  "Accha, shuni! 👂",
-  "Ektu golpo kori! ❤️",
-  "Ami ready! 😎",
-  "Tomar kotha choluk! 💗",
-  "Aro kichu ache? 👀",
-  "Bolo, tarpor? 😁",
-  "Ami ekhane achi! 🫶",
-  "Besh, valo laglo! 🌸",
-  "Eita darun chilo! 😍",
-  "Aro emon kotha bolo! ✨",
-  "Ami shunte chai! ❤️",
-  "Hehe, tumi na! 🤭",
-  "Besh, moja holo! 😂",
-  "Ektu hashi dao! 😊",
-  "Kotha ta sundor! 🌹",
-  "Ami impressed! 😎",
-  "Aro golpo chai! 📖",
-  "Cholo adda dei! 💬",
-  "Bolo, ki khobor? 🌼",
-  "Ajke kemon acho? 🥰",
-  "Shob thik ache toh? ❤️",
-  "Ki niye busy? 💻",
-  "Notun ki cholche? ✨",
-  "Ami tomar kotha shunchi! 👂",
-  "Besh, aro bolo! 😁",
-  "Accha, tarpor ki? 👀",
-  "Hmm, bujhlam! 😊",
-  "O achha, tai naki! 😯",
-  "Eita kintu interesting! 🤓",
-  "Ami aro jante chai! 🧐",
-  "Ektu explain koro! 💬",
-  "Tumi ki bolbe? 🙈",
-  "Besh, ami achi! 🫶",
-  "Aro share koro! 💗",
-  "Tomar kotha valo lage! ❤️",
-  "Golpo cholte thakuk! 📖",
-  "Ami ekhono shunchi! 👂",
-  "Bolo, theme jeyo na! 😄",
-  "Ektu moja koro! 😂",
-  "Ami hashlam! 🤣",
-  "Oho, ki darun! 🤩",
-  "Besh, shundor! 🌹",
-  "Aha, bujhlam! 💡",
-  "Ektu aro bolo! 🥺",
-  "Ami wait korchi! 💌",
-  "Tomar sathe kotha jome! 🥰",
-  "Ektu adda hok! 💬",
-  "Besh, choluk! 🎉",
-  "Aro kotha hobe! 👋",
-  "Valo theko! ❤️",
-  "Hashikhushi thako! 😊",
-  "Abar golpo hobe! 💗"
-]
-
+  general: []
 };
 
-// Detect message category
-function detectCategory(text) {
-  const normalized = normalizeText(text);
+// =====================================
+// 1000 GENERAL REPLIES
+// =====================================
 
-  for (const [category, words] of Object.entries(keywords)) {
-    if (words.some(word => normalized.includes(word))) {
-      return category;
+const generalOpeners = [
+  "O achha",
+  "Hmm bujhlam",
+  "Areh bah",
+  "Sotti naki",
+  "Tai naki",
+  "Aha bujhlam",
+  "Oma",
+  "Hehe",
+  "Accha accha",
+  "Wah",
+  "Eita to darun",
+  "Besh besh",
+  "Oho",
+  "Hmmm",
+  "Areh baba",
+  "Ki bolo",
+  "Interesting",
+  "Ami shunchi",
+  "Thik ache",
+  "Bujhte parchi"
+];
+
+const generalMiddles = [
+  "tarpor ki holo",
+  "aro kichu bolo",
+  "tomar kotha shunte valo lage",
+  "ektu details bolo",
+  "ami kintu shunchi",
+  "golpo ta interesting lagche",
+  "erpor ki korle",
+  "amar sathe share koro",
+  "eta niye aro bolo",
+  "tomar kotha mone thakbe"
+];
+
+const generalEndings = [
+  "😊",
+  "❤️",
+  "🥰",
+  "👀",
+  "💕"
+];
+
+function buildGeneralReplies() {
+  const result = [];
+
+  for (const opener of generalOpeners) {
+    for (const middle of generalMiddles) {
+      for (const ending of generalEndings) {
+        result.push(`${opener}! ${middle} ${ending}`);
+      }
     }
+  }
+
+  return [...new Set(result)].slice(0, 1000);
+}
+
+REPLIES.general = buildGeneralReplies();
+
+// =====================================
+// CATEGORY DETECTION
+// =====================================
+
+const RULES = [
+  {
+    category: "greeting",
+    keywords: [
+      "hi", "hello", "hey", "hii", "helo",
+      "assalamualaikum", "salam", "good morning",
+      "good night", "good evening", "oi", "oii"
+    ]
+  },
+  {
+    category: "love",
+    keywords: [
+      "valobashi", "bhalobashi", "love you",
+      "i love you", "love u", "valo basi",
+      "tomake valobashi", "prem kori"
+    ]
+  },
+  {
+    category: "miss",
+    keywords: [
+      "miss you", "miss kori", "mone pore",
+      "tomake miss", "miss kortesi", "miss korchi"
+    ]
+  },
+  {
+    category: "romantic",
+    keywords: [
+      "kiss", "kiss dao", "hug dao", "jaan",
+      "jan", "babu", "baby", "sona", "shona",
+      "kolija", "pakhi", "sweetheart", "darling"
+    ]
+  },
+  {
+    category: "flirty",
+    keywords: [
+      "crush", "cute", "hot", "sexy",
+      "flirt", "romantic mood", "impress",
+      "date", "propose"
+    ]
+  },
+  {
+    category: "funny",
+    keywords: [
+      "haha", "hahaha", "lol", "lmao",
+      "moja", "funny", "joke", "haso",
+      "pagol", "gadha", "bandor"
+    ]
+  },
+  {
+    category: "emotional",
+    keywords: [
+      "mon kharap", "kosto", "koshto",
+      "sad", "dukho", "dokkho", "eka",
+      "kandchi", "kanna", "depressed",
+      "valo lagche na", "bhalo lagche na",
+      "breakup", "heartbreak"
+    ]
+  },
+  {
+    category: "angry",
+    keywords: [
+      "rag", "ragi", "angry", "ghrina",
+      "hate you", "chup", "faltu",
+      "baje", "boka", "shut up"
+    ]
+  },
+  {
+    category: "attitude",
+    keywords: [
+      "attitude", "boss", "king", "queen",
+      "swag", "style", "ignore", "ego"
+    ]
+  },
+  {
+    category: "food",
+    keywords: [
+      "khaiso", "khaicho", "kheyecho",
+      "khaiso", "khabar", "khida",
+      "bhat", "biriyani", "pizza",
+      "burger", "cha", "coffee", "ranna"
+    ]
+  },
+  {
+    category: "relationship",
+    keywords: [
+      "relationship", "gf", "bf",
+      "girlfriend", "boyfriend", "biye",
+      "marriage", "husband", "wife",
+      "prem", "valobasha", "cheating",
+      "loyal", "break up"
+    ]
+  },
+  {
+    category: "thanks",
+    keywords: [
+      "thanks", "thank you", "dhonnobad",
+      "tnx", "thnx", "thanku"
+    ]
+  },
+  {
+    category: "goodbye",
+    keywords: [
+      "bye", "goodbye", "tata",
+      "allah hafez", "pore kotha hobe",
+      "ghumabo", "jacchi"
+    ]
+  },
+  {
+    category: "daily",
+    keywords: [
+      "ki koro", "ki korcho", "ki korteso",
+      "ki obostha", "kmn acho", "kemon acho",
+      "valo acho", "bhalo acho",
+      "ki khobor", "boshe achi",
+      "ghum", "porashona", "school", "college"
+    ]
+  }
+];
+
+function detectCategory(text) {
+  let bestCategory = "general";
+  let bestScore = 0;
+
+  for (const rule of RULES) {
+    let score = 0;
+
+    for (const keyword of rule.keywords) {
+      const normalizedKeyword = normalizeText(keyword);
+
+      if (
+        normalizedKeyword &&
+        (` ${text} `).includes(` ${normalizedKeyword} `)
+      ) {
+        score += normalizedKeyword.includes(" ") ? 3 : 2;
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestCategory = rule.category;
+    }
+  }
+
+  if (bestScore > 0) return bestCategory;
+
+  const questionWords = [
+    "ki", "keno", "kothay", "kobe",
+    "kivabe", "ke", "koto", "kar",
+    "kon", "which", "what", "why",
+    "where", "when", "how", "who"
+  ];
+
+  if (hasAny(text, questionWords)) {
+    return "question";
   }
 
   return "general";
 }
 
-// Avoid repeated replies
-function getReply(threadID, senderID, category) {
-  const pool = replies[category] || replies.general;
-  const key = `${threadID}_${senderID}`;
+// =====================================
+// GROUP TRIGGER CHECK
+// =====================================
 
-  let previous = lastReplies.get(key);
+function isPremaCalled(event, botID) {
+  const body = normalizeText(event.body || "");
 
-  let available = pool.filter(reply => reply !== previous);
-
-  if (available.length === 0) {
-    available = pool;
+  if (
+    body.includes("prema") ||
+    body.includes("প্রেমা")
+  ) {
+    return true;
   }
 
-  const selected = available[random(0, available.length - 1)];
+  const mentions = event.mentions || {};
 
-  lastReplies.set(key, selected);
+  if (botID && Object.prototype.hasOwnProperty.call(mentions, botID)) {
+    return true;
+  }
 
-  return selected;
+  const reply = event.messageReply;
+
+  if (reply && botID && String(reply.senderID) === String(botID)) {
+    return true;
+  }
+
+  return false;
 }
+
+// =====================================
+// MAIN CHAT HANDLER
+// =====================================
 
 module.exports = {
   config: {
-    name: CONFIG.name,
+    name: "prema",
     version: "3.0.0",
     author: "Nahid Hasan",
-    role: 0,
-    description: "Prema Automatic Banglish Chat System",
-    category: "chat"
-  },
-
-  onStart: async function () {
-    return;
+    description: "Bangla Banglish Romantic Chatbot",
+    category: "chat",
+    role: 0
   },
 
   onChat: async function ({ event, message, api }) {
     try {
-      if (!event || !message || !event.threadID) return;
+      if (!event || !event.body) return;
 
-      const senderID = event.senderID;
+      const text = normalizeText(event.body);
+
+      if (!text) return;
+
+      const userID = String(event.senderID || "");
       const threadID = event.threadID;
-      const body = event.body || "";
 
-      if (!senderID || !body.trim()) return;
+      if (!userID || !threadID) return;
 
-      // Ignore bot's own messages
-      const botID = api.getCurrentUserID();
+      const isGroup = Boolean(event.isGroup);
 
-      if (String(senderID) === String(botID)) return;
+      let botID = "";
 
-      // Ignore commands
-      if (body.trim().startsWith("/")) return;
+      try {
+        botID = String(api.getCurrentUserID());
+      } catch (e) {}
 
-      const isGroup = event.isGroup === true;
-
-      // In groups, reply only when Prema is called
-      // or someone replies to Prema's message
-      if (isGroup) {
-        const mentions = event.mentions || {};
-        const mentionedPrema = Object.values(mentions)
-          .some(id => String(id) === String(botID));
-
-        const calledPrema = /\bprema\b|প্রেমা/i.test(body);
-
-        const repliedToPrema =
-          event.messageReply &&
-          String(event.messageReply.senderID) === String(botID);
-
-        if (!mentionedPrema && !calledPrema && !repliedToPrema) {
-          return;
-        }
+      // Group-এ Prema-কে ডাকলে তবেই উত্তর
+      if (
+        isGroup &&
+        CONFIG.groupOnlyWhenCalled &&
+        !isPremaCalled(event, botID)
+      ) {
+        return;
       }
 
-      // Cooldown to avoid rapid repeated replies
-      const cooldownKey = `${threadID}_${senderID}`;
+      // নিজের মেসেজে উত্তর দেবে না
+      if (botID && userID === botID) return;
+
       const now = Date.now();
+      const lastTime = cooldowns.get(userID) || 0;
 
-      const previousTime = userCooldown.get(cooldownKey) || 0;
+      if (now - lastTime < CONFIG.cooldown) return;
 
-      if (now - previousTime < CONFIG.cooldown) return;
+      cooldowns.set(userID, now);
 
-      userCooldown.set(cooldownKey, now);
+      const category = detectCategory(text);
+      const reply = pickReply(category, userID);
 
-      // Remove Prema's name before detecting category
-      const cleanBody = body
-        .replace(/\bprema\b/gi, "")
-        .replace(/প্রেমা/g, "")
-        .trim();
+      const delay =
+        CONFIG.minDelay +
+        Math.floor(
+          Math.random() * (CONFIG.maxDelay - CONFIG.minDelay + 1)
+        );
 
-      const finalBody = cleanBody || body;
-
-      const category = detectCategory(finalBody);
-
-      const reply = getReply(threadID, senderID, category);
-
-      // Natural response delay for conversation pacing
-      await sleep(random(CONFIG.minDelay, CONFIG.maxDelay));
-
-      await message.reply(reply);
+      setTimeout(async () => {
+        try {
+          if (message && typeof message.reply === "function") {
+            await message.reply(reply);
+          } else {
+            api.sendMessage(reply, threadID);
+          }
+        } catch (error) {
+          console.error("[PREMA SEND ERROR]", error);
+        }
+      }, delay);
 
     } catch (error) {
-      console.error("PREMA CHAT ERROR:", error);
+      console.error("[PREMA ERROR]", error);
     }
   }
 };
