@@ -4,7 +4,7 @@ if (!global.client.nahidPending)
 
 const TARGET_UID = "100066315452598";
 const TARGET_NAME = "nahid";
-const WAIT_TIME = 30 * 1000;
+const WAIT_TIME = 40 * 1000;
 
 module.exports = {
   config: {
@@ -63,7 +63,7 @@ module.exports = {
       const timer = setTimeout(async () => {
         try {
           await api.sendMessage(
-            "🔕 Nahid এখন Busy! ১০ সেকেন্ডেও কোনো উত্তর পাওয়া যায়নি।",
+            "🔕 Nahid এখন Busy! 40 সেকেন্ডেও কোনো উত্তর পাওয়া যায়নি।",
             threadID
           );
         } catch (error) {
